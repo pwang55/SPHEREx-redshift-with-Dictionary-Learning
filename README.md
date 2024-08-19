@@ -9,7 +9,7 @@ Usage:
 
 Or
 
-`python dictionary_learn_from_config.py config.yaml`
+`$ python dictionary_learn_from_config.py config.yaml`
 
 Required files:
  - 7 EAZY templates (configure folder location in main_dictionary.py: `eazy_templates_location`)

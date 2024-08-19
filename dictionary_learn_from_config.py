@@ -4,7 +4,7 @@ Config file not specified!
 
     $ python dictionary_learn_from_config.py config.yaml
 
-Make sure "dictionary_learn_fx.py" is in the same directory as this main code.
+Make sure "dictionary_learn_fx.py" is in the same directory as this code.
 Output files to OUTPUT/ is default.
 
 '''
@@ -41,6 +41,7 @@ learning_rate0 = config['Parameters']['learning_rate0']
 learning_rate_cali = config['Parameters']['learning_rate_cali']
 SNR = config['Parameters']['SNR']
 error_method = config['Parameters']['error_method']
+add_fluctuations = config['Parameters']['add_fluctuations']     # Add random fluctuations to fluxes based on error columns as gaussian
 flux_fluctuation_scaling = config['Parameters']['flux_fluctuation_scaling']
 probline = config['Parameters']['probline']
 Ncalibrators = config['Parameters']['Ncalibrators']
@@ -48,6 +49,8 @@ Ncalibrators = config['Parameters']['Ncalibrators']
 Ndict = config['Dictionary']['Ndict']
 num_EAZY_as_dict = config['Dictionary']['num_EAZY_as_dict']
 dicts_fluctuation_scaling_const = config['Dictionary']['dict_fluctuation_scaling_start']
+if type(dicts_fluctuation_scaling_const) == str:
+    dicts_fluctuation_scaling_const = float(dicts_fluctuation_scaling_const)
 dict_fluctuation_scaling_base = config['Dictionary']['dict_fluctuation_scaling_base']
 template_scale = config['Dictionary']['dict_scale']
 
@@ -55,7 +58,6 @@ rescale_constant = 8    # in additional to rescaling input data to similar noise
 f_lambda_mode = config['Settings']['f_lambda_mode']    # fitting in f_lambda or f_nu
 rescale_input = config['Settings']['rescale_input']    # if True, rescale the input catalog to comparable standard deviation level to Brown galaxies
 fix_calibration_gals = config['Settings']['fix_calibration_gals']
-add_fluctuations = config['Settings']['add_fluctuations']     # Add random fluctuations to fluxes based on error columns as gaussian
 convolve_filters = config['Settings']['convolve_filters']
 convolve_filter = convolve_filters[0] # choose to convolve templates with filter or not in the first stage of optimized grid search
 last_stage_convolve_filter = convolve_filters[1]   # whether to colvolve with filters in the last stage of grid search 

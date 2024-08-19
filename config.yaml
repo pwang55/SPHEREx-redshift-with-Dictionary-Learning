@@ -13,6 +13,7 @@ Parameters:
   SNR: 100                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method=0
   error_method: 1                                 # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 
                                                   # 2: error is 1/SNR*fluxes
+  add_fluctuations: False                         # Add random fluctuations to fluxes based on error columns
   flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0
   probline: 0.1585                                # Cumulative probability to evaluate 1-sigma, default 0.317/2
   Ncalibrators: 50                                # Number of calibration galaxies, default 50
@@ -32,7 +33,6 @@ Zgrid:
   zgrid_errsearchsize: 0.03                       # Optimized zgrid error search size in each direction, default 0.03
 
 Settings:
-  add_fluctuations: False                         # Add random fluctuations to fluxes based on error columns
   fix_calibration_gals: True                      # Fixing calibration galaxies to the same ones
   rescale_input: False                            # rescale input to around the same order of magnitude, default: False
   convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False
