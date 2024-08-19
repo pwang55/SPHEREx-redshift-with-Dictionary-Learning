@@ -1,0 +1,40 @@
+# Configure file for main_dictionary_learn.py
+
+Filenames_locations:                              # All locations can be relative or absolute
+  filename: cigale_random_sed_att_err_20000.npz   # input catalog
+  eazy_templates_location: EAZY_1p1_Spectra       # EAZY templates folder location
+  filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
+  OUTPUT: OUTPUTS                                 # Output files directory
+
+Parameters:
+  Ndat: 2000                                      # Number of input data to run
+  learning_rate0: 0.5                             # Regular learning rate
+  learning_rate_cali: 1.0                         # Learning rate for calibration objects
+  SNR: 100                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method=0
+  error_method: 1                                 # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 
+                                                  # 2: error is 1/SNR*fluxes
+  flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0
+  probline: 0.1585                                # Cumulative probability to evaluate 1-sigma, default 0.317/2
+  Ncalibrators: 50                                # Number of calibration galaxies, default 50
+
+Dictionary:
+  Ndict: 10                                       # Number of dictionaries to initialize
+  num_EAZY_as_dict: 1                             # Number of EAZY templates used to initialize dictionaries, 0~7
+  dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
+  dict_fluctuation_scaling_base: 2               # Initialize dictionaries with (base)**(-1) decreasing magnitude 
+  dict_scale: 1.0                                 # Additional artificial scaling for dictionaries, default 1.0
+
+Zgrid:
+  z_fitting_max: 2.0                              # Max allowed fitted redshift
+  zgrid_separation: [0, 0.1, 0.3, 0.5, 1, 1.5] # Optimized zgrid separation points for different stepsizes, excluding the endpoint
+  zgrid_stepsizes: [0.002, 0.005, 0.01, 0.01, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
+  min_zgrid_searchsize: 0.02                      # Optimized zgrid minimum search size in each direction at 2nd stage, default 0.02
+  zgrid_errsearchsize: 0.03                       # Optimized zgrid error search size in each direction, default 0.03
+
+Settings:
+  add_fluctuations: False                         # Add random fluctuations to fluxes based on error columns
+  fix_calibration_gals: True                      # Fixing calibration galaxies to the same ones
+  rescale_input: False                            # rescale input to around the same order of magnitude, default: False
+  convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False
+  f_lambda_mode: True                             # Running the code with all fluxes in f_lambda, default: True
+

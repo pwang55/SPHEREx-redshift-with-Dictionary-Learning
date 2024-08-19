@@ -1,68 +1,68 @@
 '''
 
-Input catalog not specified!
+Config file not specified!
 
-    $ python main_dictionary_learn.py input.npz
+    $ python dictionary_learn_from_config.py config.yaml
 
-Replace input.npz with the file you want to run dictionary learning with.
-Make sure "dictionary_learn_fx.py" is in the same directory as this main code
-Output files to OUTPUT/ is default
+Make sure "dictionary_learn_fx.py" is in the same directory as this main code.
+Output files to OUTPUT/ is default.
 
 '''
 import numpy as np
-import pandas as pd
+# import pandas as pd
 import sys
 import time
-from numba import jit, njit     # use numba to accelerate key functions in the algorithm (by roughly a factor of 3!)
-from glob import glob
+# from numba import jit, njit     # use numba to accelerate key functions in the algorithm (by roughly a factor of 3!)
+# from glob import glob
 from numpy.random import default_rng
 import matplotlib.pyplot as plt
 from pathlib import Path
 import dictionary_learn_fx as fx # type: ignore
+import yaml
 
-# load simulated spectra data
 
 if len(sys.argv) == 1:
     print(__doc__)
     exit()
 
-filename = sys.argv[1]
+config_file = sys.argv[1]
 
-# eazy_templates_location = '/Users/brianwang76/SPHEREx/testing/redshift/npz_data_and_attenuation/Pao_yu_eazy_lephare/EAZY_1p1_Spectra/'
-eazy_templates_location = 'EAZY_1p1_Spectra'
-# brown_location = '/Users/brianwang76/SPHEREx/testing/redshift/npz_data_and_attenuation/galsedatlas_brown_etal_2014/'
-# filter_location = '/Users/brianwang76/SPHEREx/testing/redshift/spherex_paoyu_filters/'
-filter_location = 'spherex_paoyu_filters'
+with open(config_file, 'r') as file:
+    config = yaml.safe_load(file)
 
-# Ndat = 20000 # long
-# Ndat = 2000 # nominal
-Ndat = 2000 # quick experiment
-Ndict = 10    # number of dictionary not including constant
+# load simulated spectra data
+filename = config['Filenames_locations']['filename']
+eazy_templates_location = config['Filenames_locations']['eazy_templates_location']
+filter_location = config['Filenames_locations']['filter_location']
+output_dirname = config['Filenames_locations']['OUTPUT']
+
+Ndat = config['Parameters']['Ndat']
+learning_rate0 = config['Parameters']['learning_rate0']
+learning_rate_cali = config['Parameters']['learning_rate_cali']
+SNR = config['Parameters']['SNR']
+error_method = config['Parameters']['error_method']
+flux_fluctuation_scaling = config['Parameters']['flux_fluctuation_scaling']
+probline = config['Parameters']['probline']
+Ncalibrators = config['Parameters']['Ncalibrators']
+
+Ndict = config['Dictionary']['Ndict']
+num_EAZY_as_dict = config['Dictionary']['num_EAZY_as_dict']
+dicts_fluctuation_scaling_const = config['Dictionary']['dict_fluctuation_scaling_start']
+dict_fluctuation_scaling_base = config['Dictionary']['dict_fluctuation_scaling_base']
+template_scale = config['Dictionary']['dict_scale']
+
 rescale_constant = 8    # in additional to rescaling input data to similar noise level as initial dicts, also multiply input catalog by this number to make it a bit bigger
-f_lambda_mode = True    # fitting in f_lambda or f_nu
-rescale_input = False    # if True, rescale the input catalog to comparable standard deviation level to Brown galaxies
-convolve_filter = False # choose to convolve templates with filter or not in the first stage of optimized grid search
-last_stage_convolve_filter = False   # whether to colvolve with filters in the last stage of grid search 
-fitting_convolve_filter = False # Whether to convolve with filters in the end when fitting final redshifts
-fix_calibration_gals = True
-add_fluctuations = False     # Add random fluctuations to fluxes based on error columns as gaussian
-error_method = 1        # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 2: error is 1/SNR*fluxes
-num_EAZY_as_dict = 1        # use how many number of EAZY templates as initialized dictionary, max=7
+f_lambda_mode = config['Settings']['f_lambda_mode']    # fitting in f_lambda or f_nu
+rescale_input = config['Settings']['rescale_input']    # if True, rescale the input catalog to comparable standard deviation level to Brown galaxies
+fix_calibration_gals = config['Settings']['fix_calibration_gals']
+add_fluctuations = config['Settings']['add_fluctuations']     # Add random fluctuations to fluxes based on error columns as gaussian
+convolve_filters = config['Settings']['convolve_filters']
+convolve_filter = convolve_filters[0] # choose to convolve templates with filter or not in the first stage of optimized grid search
+last_stage_convolve_filter = convolve_filters[1]   # whether to colvolve with filters in the last stage of grid search 
+fitting_convolve_filter = convolve_filters[2] # Whether to convolve with filters in the end when fitting final redshifts
 
-
-learning_rate0 = 0.5
-learning_rate_cali = 1.0
-# learning_rate_cali = learning_rate0 * 10
-
-# SNR = np.inf # median signal to noise ratio across entire catalog
-SNR = 100
-flux_fluctuation_scaling = 1.0   # multiply this with each gaussian sigma to decrease or increase fluctuation scale
-template_scale = 1.0
-
-probline = 0.317/2  # choose the probability to evaluate outside cumulative probability in each side outside 1-sigma
 c = 3e18
 
-Ncalibrators = 50
 i_calibrator_galaxies_input = np.array([145, 361, 166, 137, 338,   2, 158, 375, 236, 237, 188, 343, 265,
             120, 254,   7,  45,  12, 274,  62, 108, 379, 396, 115, 301, 369,
             43, 198, 210, 294, 329, 180, 380, 194, 101, 347,   5,  17, 285,
@@ -71,31 +71,22 @@ if Ndat < 400:
     i_calibrator_galaxies_input = np.random.randint(low=0, high=Ndat, size=Ncalibrators)
 
 
-z_fitting_max = 2.0
+z_fitting_max = config['Zgrid']['z_fitting_max']
 # optimized zgrid setting and initialization
-# configure this whole part to make different "zgrid" if we want
-zgrid_seps = np.array([0, 0.1, 0.3, 0.5, 1, 1.5, z_fitting_max])
-zgrid_stepsizes = np.array([0.002, 0.005, 0.01, 0.01, 0.01, 0.02])  # This needs to be shorter than zgrid_seps by 1 element
-zgrid_searchsize = max(max(zgrid_stepsizes), 0.02)  # search grid size to the left and right should be at least 0.02 but equal to the largest step size
-zgrid_errsearchsize = 0.03
-
+zgrid_seps = config['Zgrid']['zgrid_separation']
+zgrid_seps.append(z_fitting_max)
+zgrid_seps = np.array(zgrid_seps)
+zgrid_stepsizes = np.array(config['Zgrid']['zgrid_stepsizes'])  # This needs to be shorter than zgrid_seps by 1 element
+zgrid_searchsize = max(max(zgrid_stepsizes), config['Zgrid']['min_zgrid_searchsize'])  # search grid size to the left and right should be at least 0.02 but equal to the largest step size
+zgrid_errsearchsize = config['Zgrid']['zgrid_errsearchsize']
 zgrid = fx.generate_zgrid(zgrid_seps, zgrid_stepsizes, z_fitting_max)
 
 # Initialize dictionaries as noise with different level of fluctuation
-dicts_fluctuation_scaling_const = 1e-2
-# dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(10**i) for i in range(Ndict-1)])
-dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(10**(2*i/Ndict)) for i in range(Ndict-1)])
-
-# dictionary_fluctuation_scaling = np.array([1e-8 for i in range(1,Ndict)])
+dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**i) for i in range(Ndict-1)])
+# dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**(2*i/Ndict)) for i in range(Ndict-1)])
 
 
-
-
-
-
-# output_dirname = ''             # use this if you don't want a subfolder for output files
-output_dirname = 'OUTPUTS/'
-if output_dirname[-1] != '/':
+if len(output_dirname) > 0 and output_dirname[-1] != '/':
     output_dirname = output_dirname + '/'
 output_dir = Path(output_dirname)
 if len(output_dirname) > 0 and not output_dir.is_dir():
