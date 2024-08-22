@@ -1,11 +1,30 @@
+## INSTALLATION
 
+In desired local directoy,
+
+`$ git clone https://github.com/pwang55/SPHEREx-redshift-with-Dictionary-Learning.git`
+
+## Update
+
+`$ git fetch`
+
+`$ git status`
+
+`$ git merge origin/main`
+
+or simply
+
+`$ git pull`
+
+##
 
 Make sure **`main_dictionary.py`** and **`dictionary_learn_fx.py`** are in the same folder.
-By default, main_dictionary.py creates an `OUTPUT` folder for all output files.
 
-Usage:
+By default, `main_dictionary.py` and `dictionary_learn_from_config.py` creates an `OUTPUT` folder for all output files.
 
-`$ python main_dictionary.py [input_file.npz]`
+## Usage
+
+`$ python main_dictionary.py input_file.npz`
 
 Or
 
