@@ -7,22 +7,22 @@ Filenames_locations:                              # All locations can be relativ
   OUTPUT: OUTPUTS                                 # Output files directory
 
 Parameters:
-  Ndat: 2000                                      # Number of input data to run
-  learning_rate0: 0.5                             # Regular learning rate
-  learning_rate_cali: 1.0                         # Learning rate for calibration objects
-  SNR: 100                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method=0
+  Ndat: 400                                      # Number of input data to run
+  learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
+  learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
+  SNR: 100                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
   error_method: 1                                 # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 
                                                   # 2: error is 1/SNR*fluxes
-  add_fluctuations: False                         # Add random fluctuations to fluxes based on error columns
+  add_fluctuations: True                         # Add random fluctuations to fluxes based on error columns
   flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0
   probline: 0.1585                                # Cumulative probability to evaluate 1-sigma, default 0.317/2
   Ncalibrators: 50                                # Number of calibration galaxies, default 50
 
 Dictionary:
   Ndict: 10                                       # Number of dictionaries to initialize
-  num_EAZY_as_dict: 1                             # Number of EAZY templates used to initialize dictionaries, 0~7
+  num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7
   dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
-  dict_fluctuation_scaling_base: 2               # Initialize dictionaries with (base)**(-1) decreasing magnitude 
+  dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
   dict_scale: 1.0                                 # Additional artificial scaling for dictionaries, default 1.0
 
 Zgrid:
@@ -33,6 +33,8 @@ Zgrid:
   zgrid_errsearchsize: 0.03                       # Optimized zgrid error search size in each direction, default 0.03
 
 Settings:
+  algorithm: 1                                    # 0: D*p/sum(p^2), psudo-inverse vector method, 1: dictionary learning from arXiv:0908.0050v2
+  update_loops: 5                                 # if algorithm = 1, number of loops to run updates on dictionaries
   fix_calibration_gals: True                      # Fixing calibration galaxies to the same ones
   rescale_input: False                            # rescale input to around the same order of magnitude, default: False
   convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False

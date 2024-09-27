@@ -58,6 +58,8 @@ rescale_constant = 8    # in additional to rescaling input data to similar noise
 f_lambda_mode = config['Settings']['f_lambda_mode']    # fitting in f_lambda or f_nu
 rescale_input = config['Settings']['rescale_input']    # if True, rescale the input catalog to comparable standard deviation level to Brown galaxies
 fix_calibration_gals = config['Settings']['fix_calibration_gals']
+algorithm = config['Settings']['algorithm']             # choose which algorithm to use for dictionary updates, 0: psudo-inverse vector method, 1: paper method
+N_AB_loops = config['Settings']['update_loops']         # if algorithm = 1, number of loops to run updates on dictionaries
 convolve_filters = config['Settings']['convolve_filters']
 convolve_filter = convolve_filters[0] # choose to convolve templates with filter or not in the first stage of optimized grid search
 last_stage_convolve_filter = convolve_filters[1]   # whether to colvolve with filters in the last stage of grid search 
@@ -96,12 +98,14 @@ if len(output_dirname) > 0 and not output_dir.is_dir():
 
 
 if __name__ == "__main__":
+    print(f"Algorithm = {algorithm}")
     print(f"Ndat = {Ndat}")
     print(f"Ndict = {Ndict}")
     print(f"Rescale input: {rescale_input}")
     # print(f"Convolving filters: 1st stage:{convolve_filter}, 2nd stage:{last_stage_convolve_filter}, fitting:{fitting_convolve_filter}")
     print(f"Fix calibration gals: {fix_calibration_gals}")
-    print(f"Learning rates = {learning_rate0}/{learning_rate_cali}")
+    if algorithm == 0:
+        print(f"Learning rates = {learning_rate0}/{learning_rate_cali}")
     print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")
     print(f"Add fluctuations: {add_fluctuations} (x{flux_fluctuation_scaling})")
     # print(f"Data is f_lambda: {data_is_flambda}")
@@ -168,18 +172,16 @@ else:
     i_calibrator_galaxies = rng.choice(Ngal,size=Ncalibrators,replace=False)
 
 
-# TESTING
-chisqs = [] # best chi^2
-zhl = []    # zhigh - zlow
-delta_z = []
-model_diff = []
-peak = []
-
 # def main():
 if __name__ == "__main__":
     # iterate over the data several times
     Niterations = 3
     # resid_array = np.zeros(Niterations+1)
+
+    A = np.zeros((Ndict+1, Ndict+1))
+    B = np.zeros((len(lamb_rest), Ndict+1))
+
+
     for i_iter in range(Niterations):
         print(str(i_iter)+' of '+str(Niterations)+' iterations')
         #resid = np.subtract(spec_obs[:],model) # sean commented these out, let's fix these later?
@@ -205,18 +207,11 @@ if __name__ == "__main__":
             # z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, filter_infos=filter_infos,
             #                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
             #                                         zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter,error=False)
-            # TESTING
             z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, filter_infos=filter_infos,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter, error=False)
-            min_chi2 = np.min(residues[1])
-            chisqs.append(min_chi2)
-            zhl.append(zhigh-zlow)
-            delta_z.append(ztrue[i_gal][0]-z)
             # set the learning rate
             learning_rate = learning_rate0
-
-            # print(learning_rate)
 
             # if this is a calibrator galaxy
             if i_gal in i_calibrator_galaxies:
@@ -225,53 +220,34 @@ if __name__ == "__main__":
 
             # update the spectral dictionary using the residuals between the model and data
             residual = spec_obs[i_gal,:] - model
-            residual_sum = np.sum(residual)
-            model_diff.append(residual_sum)
-
-
-            # TESTING
-            # learning_rate = 1/min_chi2
-            # learning_rate = learning_rate * np.exp(-min_chi2/2)
-            # learning_rate = learning_rate * np.exp(-np.abs(residual_sum))
-            # learning_rate = np.exp(-np.abs(residual_sum**2))
-            # print(learning_rate)
-            if not zinput:
-                ztrials_all_unsorted = np.concatenate((ztrials[0],ztrials[1]))
-                sort_idx = np.argsort(ztrials_all_unsorted)
-                ztrials_all = ztrials_all_unsorted[sort_idx]
-                residues_all_unsorted = np.concatenate((residues[0],residues[1]))
-                residues_all = residues_all_unsorted[sort_idx]
-
-                prob_all = np.exp(-(residues_all-np.min(residues_all))/2)
-                dz_all = np.diff(ztrials_all)
-                dprob_all = np.diff(prob_all)
-                d_area_all = dz_all * (prob_all[:-1] + 0.5*dprob_all)
-                total_prob_all = np.sum(d_area_all)
-                # total_prob = np.trapz(z_all, prob_all)
-                prob_all = prob_all/total_prob_all
-                peak_prob_all = np.max(prob_all)
-                peak.append(peak_prob_all)
-            else:
-                peak_prob_all = 1000.0
-                peak.append(peak_prob_all)
-            # TESTING
-            # learning_rate = learning_rate * 1.0/(1001.0-peak_prob_all)**2
 
 
             # find the rest wavelength range to update
             j_update = np.where((lamb_rest > np.min(lamb_obs)/(1+z)) & (lamb_rest < np.max(lamb_obs)/(1+z)))[0]
             # interpolate the residual to these values
             interpolated_residual = np.interp(lamb_rest[j_update],lamb_obs/(1+z),residual)
+            interpolated_spec_obs = np.interp(lamb_rest[j_update], lamb_obs/(1+z), spec_obs[i_gal,:])
+            model_rest = ((D_rest).T @ params).reshape(len(lamb_rest))
+            model_rest[j_update] = interpolated_spec_obs
             # inspired by the equation below equation 8 in https://dl.acm.org/doi/pdf/10.5555/1756006.1756008
             # update each item in the dictionary (do not modify the DC offset term at the end)
-            for i in range(D_rest.shape[0]-1):
-                # update_factor = learning_rate*(params[i]/np.sqrt(np.sum(params**2)))
-                # update_factor = learning_rate*(1/params[i]) # TESTING
-                update_factor = learning_rate*(params[i]/(np.sum(params**2)))
 
+            if algorithm == 0:
+                for i in range(D_rest.shape[0]-1):
+                    update_factor = learning_rate*(params[i]/(np.sum(params**2)))
+                    D_rest[i,j_update] = D_rest[i,j_update] + update_factor*interpolated_residual
+            elif algorithm == 1:
+                # update A and B
+                A += params @ params.T
+                B += model_rest.reshape((len(model_rest),1)) @ params.T
 
-                D_rest[i,j_update] = D_rest[i,j_update] + update_factor*interpolated_residual
-                # D_rest[i,j_update] = D_rest[i,j_update] + update_factor*interpolated_residual/params[i]   # TESTING
+                # loop several times for it to converge
+                for i in range(N_AB_loops):
+                    # update each item in the dictionary (do not modify the DC offset term at the end)
+                    for j in range(D_rest.shape[0]-1):
+                        uj = 1/np.diagonal(A)[j] * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
+                        uj_norm = np.linalg.norm(uj)
+                        D_rest[j] = uj/max(1, uj_norm)
 
 
     print('Provisional Redshift Estimation')
@@ -293,6 +269,10 @@ if __name__ == "__main__":
                              num_EAZY_as_dict=num_EAZY_as_dict, lamb_rest=lamb_rest, template_scale=template_scale)
 
     # iterate again
+
+    A = np.zeros((Ndict+1, Ndict+1))
+    B = np.zeros((len(lamb_rest), Ndict+1))
+
     for i_iter in range(Niterations):
         print(str(i_iter)+' of '+str(Niterations)+' re-iterations')
         for i_gal in np.arange(Ngal).astype('int'):
@@ -312,14 +292,27 @@ if __name__ == "__main__":
             j_update = np.where((lamb_rest > np.min(lamb_obs)/(1+z)) & (lamb_rest < np.max(lamb_obs)/(1+z)))[0]
             # interpolate the residual to these values
             interpolated_residual = np.interp(lamb_rest[j_update],lamb_obs/(1+z),residual)
+            interpolated_spec_obs = np.interp(lamb_rest[j_update], lamb_obs/(1+z), spec_obs[i_gal,:])
+            model_rest = ((D_rest).T @ params).reshape(len(lamb_rest))
+            model_rest[j_update] = interpolated_spec_obs
             # inspired by the equation below equation 8 in https://dl.acm.org/doi/pdf/10.5555/1756006.1756008
             # update each item in the dictionary (do not modify the DC offset term at the end)
-            for i in range(D_rest.shape[0]-1):
-                # update_factor = learning_rate*(params[i]/np.sqrt(np.sum(params**2)))
-                # update_factor = learning_rate*(1/params[i])  # TESTING
-                update_factor = learning_rate*(params[i]/(np.sum(params**2)))
+            if algorithm == 0:
+                for i in range(D_rest.shape[0]-1):
+                    update_factor = learning_rate*(params[i]/(np.sum(params**2)))
+                    D_rest[i,j_update] = D_rest[i,j_update] + update_factor*interpolated_residual
+            elif algorithm == 1:
+                # update A and B
+                A += params @ params.T
+                B += model_rest.reshape((len(model_rest),1)) @ params.T
 
-                D_rest[i,j_update] = D_rest[i,j_update] + update_factor*interpolated_residual
+                # loop several times for it to converge
+                for i in range(N_AB_loops):
+                    # update each item in the dictionary (do not modify the DC offset term at the end)
+                    for j in range(D_rest.shape[0]-1):
+                        uj = 1/np.diagonal(A)[j] * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
+                        uj_norm = np.linalg.norm(uj)
+                        D_rest[j] = uj/max(1, uj_norm)
 
         
     # plot results
@@ -334,10 +327,10 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid('on')
     plt.tight_layout()
-    plt.savefig(output_dirname+'trained_templateSNR'+str(SNR)+'.png',dpi=600)
+    plt.savefig(output_dirname+f'trained_template_algorithm{algorithm}_SNR{SNR}.png',dpi=600)
     # plt.savefig(output_dirname+'trained_template.png',dpi=600)
 
-    np.savez_compressed(output_dirname+'trained_templateSNR'+str(SNR)+'.npz',lamb_rest=lamb_rest,D_rest=D_rest)
+    np.savez_compressed(output_dirname+f'trained_template_algorithm{algorithm}_SNR{SNR}.npz',lamb_rest=lamb_rest,D_rest=D_rest)
     # np.savez_compressed(output_dirname+'trained_template.npz',lamb_rest=lamb_rest,D_rest=D_rest)
 
     # plt.figure(6, figsize=templates_figsize)
@@ -360,7 +353,7 @@ if __name__ == "__main__":
     plt.subplot(len(D_rest[:,0])-1,1,1)
     plt.title('Trained Spectral Type Dictionary')
     plt.tight_layout()
-    plt.savefig(output_dirname+'trained_template_multiplotSNR'+str(SNR)+'.png',dpi=600)
+    plt.savefig(output_dirname+f'trained_template_multiplot_algorithm{algorithm}_SNR{SNR}.png',dpi=600)
     # plt.savefig(output_dirname+'trained_template_multiplot.png',dpi=600)
 
 
@@ -462,7 +455,7 @@ if __name__ == "__main__":
     axs1[0].legend(fontsize=legendfontsize, framealpha=0.9, loc='upper left')
     # axs[1].legend(fontsize=20, loc='lower right')
     fig1.tight_layout()
-    plt.savefig(output_dirname+'redshift_estimation_performanceSNR'+str(SNR)+'.png',dpi=600)
+    plt.savefig(output_dirname+f'redshift_estimation_performance_algorithm{algorithm}_SNR{SNR}.png',dpi=600)
     # plt.savefig(output_dirname+'redshift_estimation_performance.png',dpi=600)
 
 
@@ -494,7 +487,7 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid('on')
     plt.tight_layout()
-    plt.savefig(output_dirname+'spectrum_fittingSNR'+str(SNR)+'.png',dpi=600)
+    plt.savefig(output_dirname+f'spectrum_fitting_algorithm{algorithm}_SNR{SNR}.png',dpi=600)
     # plt.savefig(output_dirname+'spectrum_fitting.png',dpi=600)
 
 
@@ -549,5 +542,5 @@ if __name__ == "__main__":
 
     np.savez(output_dirname+'fluctuated_input_cat.npz', z=ztrue.reshape(Ndat,1), wavelengths=lamb_obs, spectra=spec_obs, error=err_obs, spectra_original=spec_obs_original)
 
-    np.savez(output_dirname+'min_chi2_dz.npz', chi2=chisqs, zhl=zhl, dz=delta_z, diff=model_diff, rescale_factor=rescale_factor, peak=peak)
+    # np.savez(output_dirname+'min_chi2_dz.npz', chi2=chisqs, zhl=zhl, dz=delta_z, diff=model_diff, rescale_factor=rescale_factor, peak=peak)
 
