@@ -99,8 +99,9 @@ def initialize_dicts(Ndict, dictionary_fluctuation_scaling,
     """
     D_rest_list = []
     # Load EAZY as initialized dictionary
-    for i in range(num_EAZY_as_dict):
-        D_rest_list.append(templates_EAZY[i]*template_scale*0.1)
+    if num_EAZY_as_dict > 0:
+        for i in range(num_EAZY_as_dict):
+            D_rest_list.append(templates_EAZY[i]*template_scale*0.1)
     # template_scale = np.std(D_rest_list[0])
     # Rest of the dictionary to be randomly initialized
     for i in range(Ndict-num_EAZY_as_dict):

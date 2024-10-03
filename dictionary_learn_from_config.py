@@ -86,7 +86,7 @@ zgrid_errsearchsize = config['Zgrid']['zgrid_errsearchsize']
 zgrid = fx.generate_zgrid(zgrid_seps, zgrid_stepsizes, z_fitting_max)
 
 # Initialize dictionaries as noise with different level of fluctuation
-dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**i) for i in range(Ndict-1)])
+dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**i) for i in range(Ndict-num_EAZY_as_dict)])
 # dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**(2*i/Ndict)) for i in range(Ndict-1)])
 
 
