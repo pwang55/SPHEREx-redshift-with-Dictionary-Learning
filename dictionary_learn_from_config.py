@@ -53,6 +53,7 @@ if type(dicts_fluctuation_scaling_const) == str:
     dicts_fluctuation_scaling_const = float(dicts_fluctuation_scaling_const)
 dict_fluctuation_scaling_base = config['Dictionary']['dict_fluctuation_scaling_base']
 template_scale = config['Dictionary']['dict_scale']
+dict_read_from_file = config['Dictionary']['read_from_file']
 
 rescale_constant = 8    # in additional to rescaling input data to similar noise level as initial dicts, also multiply input catalog by this number to make it a bit bigger
 f_lambda_mode = config['Settings']['f_lambda_mode']    # fitting in f_lambda or f_nu
@@ -84,6 +85,7 @@ zgrid_stepsizes = np.array(config['Zgrid']['zgrid_stepsizes'])  # This needs to 
 zgrid_searchsize = max(max(zgrid_stepsizes), config['Zgrid']['min_zgrid_searchsize'])  # search grid size to the left and right should be at least 0.02 but equal to the largest step size
 zgrid_errsearchsize = config['Zgrid']['zgrid_errsearchsize']
 zgrid = fx.generate_zgrid(zgrid_seps, zgrid_stepsizes, z_fitting_max)
+fix_z = config['Zgrid']['fix_z']
 
 # Initialize dictionaries as noise with different level of fluctuation
 dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**i) for i in range(Ndict-num_EAZY_as_dict)])
@@ -97,20 +99,6 @@ if len(output_dirname) > 0 and not output_dir.is_dir():
     output_dir.mkdir()
 
 
-if __name__ == "__main__":
-    print(f"Algorithm = {algorithm}")
-    print(f"Ndat = {Ndat}")
-    print(f"Ndict = {Ndict}")
-    print(f"Rescale input: {rescale_input}")
-    # print(f"Convolving filters: 1st stage:{convolve_filter}, 2nd stage:{last_stage_convolve_filter}, fitting:{fitting_convolve_filter}")
-    print(f"Fix calibration gals: {fix_calibration_gals}")
-    if algorithm == 0:
-        print(f"Learning rates = {learning_rate0}/{learning_rate_cali}")
-    print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")
-    print(f"Add fluctuations: {add_fluctuations} (x{flux_fluctuation_scaling})")
-    # print(f"Data is f_lambda: {data_is_flambda}")
-
-
 # Read input file and get all necessary information
 ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs, rescale_factor = fx.read_file(filename, Ndat=Ndat, 
                                     rescale_constant=rescale_constant, error_method=error_method, 
@@ -118,7 +106,11 @@ ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs, rescale_factor = fx.read_
                                     add_fluctuations=add_fluctuations, flux_fluctuation_scaling=flux_fluctuation_scaling, template_scale=template_scale)
 
 
-
+# TEMP  add a tiny number to z=0.0 to get around zinput issue at z=0.0
+for i in range(len(ztrue)):
+    if ztrue[i][0] == 0.0:
+        # print('hhh')
+        ztrue[i][0] = 0.000001
 
 
 # For saving files, if using error_method=0, change SNR to a string for filenames
@@ -133,19 +125,33 @@ if error_method == 0:
 else:
     print(f"Error method: {error_method} (SNR={SNR})")
 
-print('')
 
 
-# preparing to initialize dictionaries with lamb_rest and EAZY templates
-lamb_rest = np.arange(0.01,6.0,0.01)
 if eazy_templates_location[-1] != '/':
     eazy_templates_location = eazy_templates_location + '/'
+
+# preparing to initialize dictionaries with lamb_rest and EAZY templates
+if dict_read_from_file:
+    D_rest_input = np.load(dict_read_from_file)
+    lamb_rest = D_rest_input['lamb_rest']
+    D_rest = D_rest_input['D_rest']
+    if Ndict >= len(D_rest):
+        Ndict = len(D_rest)
+    else:
+        D_rest = D_rest[:Ndict]
+    D_rest = np.vstack((D_rest, np.ones_like(lamb_rest)))
+    # lamb_rest_resolution = np.diff(lamb_rest)[0]
+    lamb_rest_resolution = np.mean(np.diff(lamb_rest))
+else:
+    lamb_rest = np.arange(0.01,6.0,0.01)
+
 templates_EAZY = fx.load_EAZY(lamb_rest, eazy_templates_location)
 if not f_lambda_mode:
     templates_EAZY = fx.flambda2fnu(lamb_rest*10000, templates_EAZY)
 
 # initialize dictionaries
-D_rest = fx.initialize_dicts(Ndict, dictionary_fluctuation_scaling=dictionary_fluctuation_scaling, templates_EAZY=templates_EAZY, 
+if not dict_read_from_file:
+    D_rest = fx.initialize_dicts(Ndict, dictionary_fluctuation_scaling=dictionary_fluctuation_scaling, templates_EAZY=templates_EAZY, 
                              num_EAZY_as_dict=num_EAZY_as_dict, lamb_rest=lamb_rest, template_scale=template_scale)
 D_rest_initial = D_rest.copy()
 
@@ -174,6 +180,22 @@ else:
 
 # def main():
 if __name__ == "__main__":
+
+    print(f"Algorithm = {algorithm}")
+    print(f"Ndat = {Ndat}")
+    print(f"Ndict = {Ndict}")
+    print(f"Rescale input: {rescale_input}")
+    # print(f"Convolving filters: 1st stage:{convolve_filter}, 2nd stage:{last_stage_convolve_filter}, fitting:{fitting_convolve_filter}")
+    print(f"Fix calibration gals: {fix_calibration_gals}")
+    if algorithm == 0:
+        print(f"Learning rates = {learning_rate0}/{learning_rate_cali}")
+    if dict_read_from_file:
+        print(f"Dictionaries from: {dict_read_from_file}")
+    else:
+        print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")
+    print(f"Add fluctuations: {add_fluctuations} (x{flux_fluctuation_scaling})")
+    # print(f"Data is f_lambda: {data_is_flambda}")
+
     # iterate over the data several times
     Niterations = 3
     # resid_array = np.zeros(Niterations+1)
@@ -195,7 +217,7 @@ if __name__ == "__main__":
                 print('    '+str(i_gal)+' of '+str(Ngal)+' spectra')
 
             # if this is a calibrator galaxy
-            if i_gal in i_calibrator_galaxies:
+            if i_gal in i_calibrator_galaxies or fix_z:
                 # use the known redshift
                 # zinput = float(ztrue[i_gal])#[0]
                 zinput = ztrue[i_gal][0]
@@ -212,7 +234,7 @@ if __name__ == "__main__":
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter, error=False)
             # set the learning rate
             learning_rate = learning_rate0
-
+            
             # if this is a calibrator galaxy
             if i_gal in i_calibrator_galaxies:
                 # use a higher learning rate since we know the redshift is correct
@@ -265,8 +287,9 @@ if __name__ == "__main__":
 
     # re-iterate on the dictionary using the estimated redshifts 
     # initialize the dictionary again
-    D_rest = fx.initialize_dicts(Ndict, dictionary_fluctuation_scaling=dictionary_fluctuation_scaling, templates_EAZY=templates_EAZY, 
-                             num_EAZY_as_dict=num_EAZY_as_dict, lamb_rest=lamb_rest, template_scale=template_scale)
+    # D_rest = fx.initialize_dicts(Ndict, dictionary_fluctuation_scaling=dictionary_fluctuation_scaling, templates_EAZY=templates_EAZY, 
+    #                          num_EAZY_as_dict=num_EAZY_as_dict, lamb_rest=lamb_rest, template_scale=template_scale)
+    D_rest = D_rest_initial.copy()
 
     # iterate again
 
@@ -277,6 +300,8 @@ if __name__ == "__main__":
         print(str(i_iter)+' of '+str(Niterations)+' re-iterations')
         for i_gal in np.arange(Ngal).astype('int'):
             zinput = zbest_provisional[i_gal]
+            if fix_z:
+                zinput = ztrue[i_gal][0]
 
             # fit this spectrum and obtain the redshift
             z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, filter_infos=filter_infos,
@@ -368,9 +393,14 @@ if __name__ == "__main__":
         if np.mod(i,100)==0:
             print('    '+str(i)+' of '+str(Ngal)+' spectra')
         # fit this spectrum and obtain the redshift
+        if fix_z:
+            zinput = ztrue[i][0]
+        else:
+            zinput = False
+
         z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, filter_infos=filter_infos,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                    zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
+                                                    zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
         # z,params,model = fit_spectrum(lamb_obs,spec_obs[i,:],lamb_rest,D_rest, conv=True)
         # store the redshift
         zbest_trained[i] = z
@@ -495,8 +525,9 @@ if __name__ == "__main__":
 
     # compare learned template with input template
     # create main wavelength array
-    lamb_um = np.arange(0.3,4.8,0.01)
-    h_lamb_um = (lamb_rest>=min(lamb_um)) & (lamb_rest<max(lamb_um))
+    lamb_um = np.arange(0.3,4.8,lamb_rest_resolution)
+    # h_lamb_um = (lamb_rest>=min(lamb_um)) & (lamb_rest<max(lamb_um))
+    h_lamb_um = (lamb_rest>=0.3) & (lamb_rest<4.8)
     # If we ever need different templates to reconstruct, use following lines
     # templates_EAZY = load_EAZY(lamb_um, eazy_templates_location)
     # if not f_lambda_mode:

@@ -7,7 +7,7 @@ Filenames_locations:                              # All locations can be relativ
   OUTPUT: OUTPUTS                                 # Output files directory
 
 Parameters:
-  Ndat: 400                                      # Number of input data to run
+  Ndat: 2000                                      # Number of input data to run
   learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
   learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
   SNR: 100                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
@@ -19,11 +19,13 @@ Parameters:
   Ncalibrators: 50                                # Number of calibration galaxies, default 50
 
 Dictionary:
-  Ndict: 10                                       # Number of dictionaries to initialize
-  num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7
+  Ndict: 13                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to
+                                                  # number of dicts in file; if Ndict < number of dicts in file then the rest in file will be ignored
+  num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
   dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
   dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
   dict_scale: 1.0                                 # Additional artificial scaling for dictionaries, default 1.0
+  read_from_file: dict_EAZY_dust10_02.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
 
 Zgrid:
   z_fitting_max: 2.0                              # Max allowed fitted redshift
@@ -31,6 +33,7 @@ Zgrid:
   zgrid_stepsizes: [0.002, 0.005, 0.01, 0.01, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
   min_zgrid_searchsize: 0.02                      # Optimized zgrid minimum search size in each direction at 2nd stage, default 0.02
   zgrid_errsearchsize: 0.03                       # Optimized zgrid error search size in each direction, default 0.03
+  fix_z: False                                    # If True, always use ztrue from input file and doesn't perform zgrid search
 
 Settings:
   algorithm: 1                                    # 0: D*p/sum(p^2), psudo-inverse vector method, 1: dictionary learning from arXiv:0908.0050v2
