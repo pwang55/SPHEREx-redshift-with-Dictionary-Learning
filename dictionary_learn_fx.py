@@ -30,7 +30,7 @@ def flambda2fnu(wl, flux):
 
 
 # Read the input file and prepare them for dictionary learning
-def read_file(pathfile, Ndat, rescale_constant=8.0, error_method=0, SNR=np.inf, f_lambda_mode=True, rescale_input=True, 
+def read_file(pathfile, Ndat, calibration_idx, rescale_constant=8.0, error_method=0, SNR=np.inf, f_lambda_mode=True, rescale_input=False, 
               add_fluctuations=False, flux_fluctuation_scaling=1.0, template_scale=1.0):
     """
     Return: ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs
@@ -60,12 +60,12 @@ def read_file(pathfile, Ndat, rescale_constant=8.0, error_method=0, SNR=np.inf, 
 
     # If the dictionary learning code is running in f_lambda mode but input data is f_nu, convert data to f_lambda
     if f_lambda_mode and not data_is_flambda:
-        print("\tConvert input from f_nu to f_lambda")
+        print("Convert input from f_nu to f_lambda")
         spec_obs = fnu2flambda(lamb_obs*10000, spec_obs)
         err_obs = fnu2flambda(lamb_obs*10000, err_obs)
     # if in f_nu mode but data is f_lambda, convert to f_nu
     elif not f_lambda_mode and data_is_flambda:
-        print("\tConvert input from f_lambda to f_nu")
+        print("Convert input from f_lambda to f_nu")
         spec_obs = flambda2fnu(lamb_obs*10000, spec_obs)
         err_obs = flambda2fnu(lamb_obs*10000, err_obs)
 
@@ -74,11 +74,31 @@ def read_file(pathfile, Ndat, rescale_constant=8.0, error_method=0, SNR=np.inf, 
     if add_fluctuations:
         spec_obs = np.random.normal(spec_obs, err_obs)
 
+    # pick out calibration objects
+    Ndat1 = Ndat - len(calibration_idx)
+    idxs = np.arange(0,len(ztrue))
+    idx1 = np.setdiff1d(idxs, calibration_idx)
+    
+    ztrue0 = ztrue[calibration_idx]
+    spec_obs0 = spec_obs[calibration_idx]
+    spec_obs_original0 = spec_obs_original[calibration_idx]
+    err_obs0 = err_obs[calibration_idx]
+
+    ztrue1 = ztrue[idx1][0:Ndat1]
+    spec_obs1 = spec_obs[idx1][0:Ndat1]
+    spec_obs_original1 = spec_obs_original[idx1][0:Ndat1]
+    err_obs1 = err_obs[idx1][0:Ndat1]
+
+    ztrue = np.vstack([ztrue0, ztrue1])
+    spec_obs = np.vstack([spec_obs0, spec_obs1])
+    spec_obs_original = np.vstack([spec_obs_original0, spec_obs_original1])
+    err_obs = np.vstack([err_obs0, err_obs1])
+
     # only use the first few
-    ztrue = ztrue[0:Ndat]
-    spec_obs = spec_obs[0:Ndat,:]
-    spec_obs_original = spec_obs_original[0:Ndat,:]
-    err_obs = err_obs[0:Ndat,:]
+    # ztrue = ztrue[0:Ndat]
+    # spec_obs = spec_obs[0:Ndat,:]
+    # spec_obs_original = spec_obs_original[0:Ndat,:]
+    # err_obs = err_obs[0:Ndat,:]
 
     # rescale input catalog
     rescale_factor = np.ones((Ndat, 1))

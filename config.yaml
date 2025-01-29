@@ -1,34 +1,39 @@
 # Configure file for main_dictionary_learn.py
 
 Filenames_locations:                              # All locations can be relative or absolute
-  filename: cigale_random_sed_att_err_20000.npz   # input catalog
+  # filename: input_catalogs/cigale_random_sed_att_err_20000.npz   # input catalog
+  # filename: input_catalogs/jean_spherex_data_msnr50p.npz   # input catalog
+  filename: input_catalogs/jean_spherex_data.npz   # input catalog
   eazy_templates_location: EAZY_1p1_Spectra       # EAZY templates folder location
   filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
   OUTPUT: OUTPUTS                                 # Output files directory
 
 Parameters:
-  Ndat: 2000                                      # Number of input data to run
+  Ndat: 400                                      # Number of input data to run
   learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
   learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
-  SNR: 100                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
-  error_method: 1                                 # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 
+  SNR: 20                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
+  error_method: 0                                 # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 
                                                   # 2: error is 1/SNR*fluxes
-  add_fluctuations: True                         # Add random fluctuations to fluxes based on error columns
+  add_fluctuations: False                         # Add random fluctuations to fluxes based on error columns
   flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0
   probline: 0.1585                                # Cumulative probability to evaluate 1-sigma, default 0.317/2
-  Ncalibrators: 50                                # Number of calibration galaxies, default 50
+  Ncalibrators: 100                                # Number of calibration galaxies, default 50
+  Niterations: 3                                  # Number of iterations to train data with
 
 Dictionary:
-  Ndict: 13                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to
+  Ndict: 15                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to
                                                   # number of dicts in file; if Ndict < number of dicts in file then the rest in file will be ignored
   num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
   dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
   dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
   dict_scale: 1.0                                 # Additional artificial scaling for dictionaries, default 1.0
-  read_from_file: dict_EAZY_dust10_02.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+  # read_from_file: initial_dicts/dicts_kmeans_z00_01_15_flambda.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+  # read_from_file: initial_dicts/jean_hres_kmean15_z0_flambda.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+  read_from_file: initial_dicts/dict_EAZY_dust10_02.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
 
 Zgrid:
-  z_fitting_max: 2.0                              # Max allowed fitted redshift
+  z_fitting_max: 3.0                              # Max allowed fitted redshift
   zgrid_separation: [0, 0.1, 0.3, 0.5, 1, 1.5] # Optimized zgrid separation points for different stepsizes, excluding the endpoint
   zgrid_stepsizes: [0.002, 0.005, 0.01, 0.01, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
   min_zgrid_searchsize: 0.02                      # Optimized zgrid minimum search size in each direction at 2nd stage, default 0.02
