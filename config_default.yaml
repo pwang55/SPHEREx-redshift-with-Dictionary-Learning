@@ -1,12 +1,12 @@
 # Configure file for main_dictionary_learn.py
 
 Catalog:
-    training_catalog: input_catalogs/Jean_spherex_data_1third.npz   # input catalog for training
+    training_catalog: input_catalogs/Jean_spherex_data.npz   # input catalog for training
     evaluation_catalog: input_catalogs/Jean_spherex_data.npz   # input catalog for evaluation
-    Ndat_training: 4000                             # Number of input training data to train
+    Ndat_training: 3000                             # Number of input training data to train
     Ndat_evaluation: 10190                          # Number of input fitting catalog
     error_method: 0                                 # 0: use error from file, 1: error is 1/SNR*median(fluxes) (all the same value), 2: error is 1/SNR*fluxes
-    Ncalibrators: 1000                               # Number of calibration galaxies that will use fixed zspec when training in the beginning
+    Ncalibrators: 1000                              # Number of calibration galaxies that will use fixed zspec when training in the beginning, even if fix_z=True
     calibrator_SNR: 100                             # Minimum SNR at channel 51 for sources to qualify as calibrator sources
     f_lambda_mode: False                            # Running the code with all fluxes in f_lambda, default: False    
     SNR: 20                                         # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
