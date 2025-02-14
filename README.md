@@ -21,8 +21,8 @@ By default, `dictionary_learn_from_config.py` creates an `OUTPUT` folder for all
 `$ python dictionary_learn_from_config.py config_default.yaml`
 
 Required files:
- - 7 EAZY templates (configure folder location in main_dictionary.py: `eazy_templates_location`)
- - SPHEREx filters (configure folder locaiton in main_dictionary.py: `filter_location`)
+ - 7 EAZY templates (configure folder location in config_default.yaml: `eazy_templates_location`)
+ - SPHEREx filters (configure folder locaiton in config_default.yaml: `filter_location`)
 
 
 
