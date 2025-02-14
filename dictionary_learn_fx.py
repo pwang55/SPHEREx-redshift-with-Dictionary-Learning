@@ -30,8 +30,8 @@ def flambda2fnu(wl, flux):
 
 
 # Read the input file and prepare them for dictionary learning
-def read_file(pathfile, Ndat, calibration_idx, rescale_constant=8.0, error_method=0, SNR=np.inf, f_lambda_mode=True, rescale_input=False, 
-              add_fluctuations=False, flux_fluctuation_scaling=1.0, template_scale=1.0):
+def read_file(pathfile, Ndat, error_method=0, SNR=np.inf, f_lambda_mode=True, 
+              add_fluctuations=False, flux_fluctuation_scaling=1.0):
     """
     Return: ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs
     """
@@ -69,51 +69,25 @@ def read_file(pathfile, Ndat, calibration_idx, rescale_constant=8.0, error_metho
         spec_obs = flambda2fnu(lamb_obs*10000, spec_obs)
         err_obs = flambda2fnu(lamb_obs*10000, err_obs)
 
-    # add noise
-    spec_obs_original = spec_obs.copy()
+    # Read the original spectra without noise
+    try:
+        spec_obs_original = data['spectra_original']
+    except: 
+        spec_obs_original = spec_obs.copy()
+
     if add_fluctuations:
         spec_obs = np.random.normal(spec_obs, err_obs)
 
-    # pick out calibration objects
-    Ndat1 = Ndat - len(calibration_idx)
-    idxs = np.arange(0,len(ztrue))
-    idx1 = np.setdiff1d(idxs, calibration_idx)
-    
-    ztrue0 = ztrue[calibration_idx]
-    spec_obs0 = spec_obs[calibration_idx]
-    spec_obs_original0 = spec_obs_original[calibration_idx]
-    err_obs0 = err_obs[calibration_idx]
+    ztrue = ztrue[:Ndat]
+    spec_obs = spec_obs[:Ndat]
+    spec_obs_original = spec_obs_original[:Ndat]
+    err_obs = err_obs[:Ndat]
 
-    ztrue1 = ztrue[idx1][0:Ndat1]
-    spec_obs1 = spec_obs[idx1][0:Ndat1]
-    spec_obs_original1 = spec_obs_original[idx1][0:Ndat1]
-    err_obs1 = err_obs[idx1][0:Ndat1]
-
-    ztrue = np.vstack([ztrue0, ztrue1])
-    spec_obs = np.vstack([spec_obs0, spec_obs1])
-    spec_obs_original = np.vstack([spec_obs_original0, spec_obs_original1])
-    err_obs = np.vstack([err_obs0, err_obs1])
-
-    # only use the first few
-    # ztrue = ztrue[0:Ndat]
-    # spec_obs = spec_obs[0:Ndat,:]
-    # spec_obs_original = spec_obs_original[0:Ndat,:]
-    # err_obs = err_obs[0:Ndat,:]
-
-    # rescale input catalog
-    rescale_factor = np.ones((Ndat, 1))
-    if rescale_input:
-        std_spec_obs = np.std(spec_obs, axis=1)
-        rescale_factor = 1/std_spec_obs.reshape((Ndat, 1)) * template_scale * rescale_constant
-        spec_obs = spec_obs * rescale_factor
-        spec_obs_original = spec_obs_original * rescale_factor
-        err_obs = err_obs * rescale_factor
-
-    return ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs, rescale_factor
+    return ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs
 
 # Initialize dictionary
 def initialize_dicts(Ndict, dictionary_fluctuation_scaling, 
-                     templates_EAZY, num_EAZY_as_dict=1, lamb_rest=np.arange(0.01,6.0,0.01), template_scale=1.0):
+                     templates_EAZY, num_EAZY_as_dict=1, lamb_rest=np.arange(0.01,6.0,0.01)):
     """
     Return: D_rest
     """
@@ -121,12 +95,12 @@ def initialize_dicts(Ndict, dictionary_fluctuation_scaling,
     # Load EAZY as initialized dictionary
     if num_EAZY_as_dict > 0:
         for i in range(num_EAZY_as_dict):
-            D_rest_list.append(templates_EAZY[i]*template_scale*0.1)
+            D_rest_list.append(templates_EAZY[i]*0.1)
     # template_scale = np.std(D_rest_list[0])
     # Rest of the dictionary to be randomly initialized
     for i in range(Ndict-num_EAZY_as_dict):
-        D_rest_list.append(np.random.randn(len(lamb_rest))*template_scale*dictionary_fluctuation_scaling[i])
-    D_rest_list.append(np.ones_like(lamb_rest)*template_scale)
+        D_rest_list.append(np.random.randn(len(lamb_rest))*dictionary_fluctuation_scaling[i])
+    D_rest_list.append(np.ones_like(lamb_rest))
     D_rest = np.vstack(tuple(D_rest_list))
     # note that the last row is a constant DC value to enable the code to fit out the average value
     # D_rest_initial = D_rest.copy()
@@ -174,11 +148,12 @@ def load_EAZY(lamb_um, eazy_templates_location):
     dfs = []
     for i in range(1,8):
         dfi = pd.read_csv(eazy_templates_location+f'eazy_v1.1_sed{i}.dat', names=['lambda_ang','flux'], sep='\s+')
-        if i != 6:
-            dfs.append(np.interp(lamb_um*10000, dfi['lambda_ang'], dfi['flux']/np.std(dfi['flux'])))
-        else:
-            dfs.append(np.interp(lamb_um*10000, dfi['lambda_ang'], -1.0*dfi['flux']/np.std(dfi['flux'])))
-    templates_EAZY = np.vstack([dfs, np.ones_like(lamb_um)])
+        # if i != 6:
+        dfs.append(np.interp(lamb_um*10000, dfi['lambda_ang'], dfi['flux']/np.std(dfi['flux'])))
+        # else:
+        # dfs.append(np.interp(lamb_um*10000, dfi['lambda_ang'], -1.0*dfi['flux']/np.std(dfi['flux'])))
+    # templates_EAZY = np.vstack([dfs, np.ones_like(lamb_um)])
+    templates_EAZY = dfs
     return templates_EAZY
 
 
@@ -234,7 +209,7 @@ def apply_redshift1(D,z,lamb_in,lamb_out, filter_infos, conv=False):
 
 # Adaptive grid search with increasing step size toward higher z
 @jit(nopython=True,fastmath=True)
-def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos, 
+def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos, NMF=False, NMF_tolerance=1e-3, NMF_cutoff=20000,
                  zgrid_searchsize=0.02, zgrid_errsearchsize=0.03, z_fitting_max=2.0, probline=0.317/2, 
                  zinput=False, conv_first=False, conv_last=False, error=False, second_stage=True):
     # reshape array in preparation for later calculation
@@ -249,15 +224,38 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
         for k in range(ztrial0.shape[0]):
             # make this redshifted template
             D_thisz = apply_redshift1(D,ztrial0[k],lamb_D,lamb_data, filter_infos, conv=conv_first)
-            D_thisz = D_thisz/err_data
 
             # params = inv(D*D')*D*s'
-            params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped
+            if not NMF:
+                D_thisz = D_thisz/err_data
+                params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+            else:
+                T = D_thisz/err_data**2
+                TT = T @ T.T
+                b = T @ (spec_data/err_data**2)
+                c0 = np.ones(len(D_thisz))
+                score = 1.0
+                ci = c0.copy()
+                nmf_i = 0
+                ci_old = c0.copy()
+                while score >= NMF_tolerance:
+                    # print('here')
+                    ci_old = ci
+                    d = TT @ ci
+                    ci = ci * np.abs(b)/d
+                    score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                    nmf_i += 1
+                    if nmf_i > NMF_cutoff:
+                        break
+                    # del ci_old
+                params = ci.reshape((len(D_thisz), 1))
+                model = ((D_thisz).T @ params).reshape(len(lamb_data))
+
             # calculate the model from these parameters and this template
             # model = np.zeros_like(lamb_data)
             # for i in range(D.shape[0]):
                 # model += params[i]*D_thisz[i,:]
-            model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
 
             # calculate the RMS residual
             residual_vs_z0[k] = np.sum((model - spec_data)**2/err_data**2)
@@ -286,14 +284,38 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
             for k in range(ztrial.shape[0]):
                 # make this redshifted template
                 D_thisz = apply_redshift1(D,ztrial[k],lamb_D,lamb_data, filter_infos, conv=conv_last)
-                D_thisz = D_thisz/err_data
+                # D_thisz = D_thisz/err_data
                 # params = inv(D*D')*D*s'
-                params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped
+                # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                if not NMF:
+                    D_thisz = D_thisz/err_data
+                    params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                    model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+                else:
+                    T = D_thisz/err_data**2
+                    TT = T @ T.T
+                    b = T @ (spec_data/err_data**2)
+                    c0 = np.ones(len(D_thisz))
+                    score = 1.0
+                    ci = c0.copy()
+                    nmf_i = 0
+                    ci_old = c0.copy()
+                    while score >= NMF_tolerance:
+                        ci_old = ci
+                        d = TT @ ci
+                        ci = ci * np.abs(b)/d
+                        score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                        nmf_i += 1
+                        # del ci_old
+                        if nmf_i > NMF_cutoff:
+                            break
+                    params = ci.reshape((len(D_thisz), 1))
+                    model = ((D_thisz).T @ params).reshape(len(lamb_data))
                 # calculate the model from these parameters and this template
                 # model = np.zeros_like(lamb_data)
                 # for i in range(D.shape[0]):
                     # model += params[i]*D_thisz[i,:]
-                model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+                # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
 
                 # calculate the RMS residual
                 residual_vs_z[k] = np.sum((model - spec_data)**2/err_data**2)
@@ -309,23 +331,51 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
     # redo the fit at this redshift
     # make this redshifted template
     D_thisz = apply_redshift1(D,z,lamb_D,lamb_data, filter_infos, conv=conv_last)
-    D_thisz = D_thisz/err_data
+    # D_thisz = D_thisz/err_data
 
     # fit the data to this template
     # params = inv(D*D')*D*s'
-    params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped
+    # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+    if not NMF:
+        D_thisz = D_thisz/err_data
+        params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+        model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+    else:
+        T = D_thisz/err_data**2
+        TT = T @ T.T
+        b = T @ (spec_data/err_data**2)
+        c0 = np.ones(len(D_thisz))
+        score = 1.0
+        ci = c0.copy()
+        nmf_i = 0
+        ci_old = c0.copy()
+        while score >= NMF_tolerance:
+            # print(score)
+            ci_old = ci
+            d = TT @ ci
+            ci = ci * np.abs(b)/d
+            score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+            nmf_i += 1
+            if nmf_i > NMF_cutoff:
+                # print(spec_data[0], '\t', nmf_i, '\t', score)
+                break
+            # del ci_old
+        # print(nmf_i)
+        params = ci.reshape((len(D_thisz), 1))
+        model = ((D_thisz).T @ params).reshape(len(lamb_data))
     # calculate the model for these parameters and this template
     # model = np.zeros_like(lamb_data)
     # for i in range(D.shape[0]):
         # model += params[i]*D_thisz[i,:]
-    model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+    # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
     model0 = model.copy()
     if zinput:
         residues0 = np.array([np.sum((model - spec_data)**2/err_data**2)])
         residual_vs_z = np.array([np.sum((model - spec_data)**2/err_data**2)])
 
+    params0 = params.copy()
     if not error:
-        return z,0.0,0.0,params,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
+        return z,0.0,0.0,params0,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
 
     else:
         min_res = np.min(residues0)
@@ -359,13 +409,39 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
         for k in range(ztrial1_low.shape[0]):
             # make this redshifted template
             D_thisz = apply_redshift1(D,ztrial1_low[k],lamb_D,lamb_data, filter_infos, conv=conv_last)
-            D_thisz = D_thisz/err_data
+            # D_thisz = D_thisz/err_data
 
             # params = inv(D*D')*D*s'
-            params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped
+            # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+            if not NMF:
+                D_thisz = D_thisz/err_data
+                params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+            else:
+                T = D_thisz/err_data**2
+                TT = T @ T.T
+                b = T @ (spec_data/err_data**2)
+                c0 = np.ones(len(D_thisz))
+                score = 1.0
+                ci = c0.copy()
+                nmf_i = 0
+                ci_old = c0.copy()
+                while score >= NMF_tolerance:
+                    ci_old = ci
+                    d = TT @ ci
+                    ci = ci * np.abs(b)/d
+                    score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                    # del ci_old
+                    # if ci == ci_old:    # sometimes tolerance can never be achieve; if the solution doesn't change then break out of while loop
+                    #     break
+                    nmf_i += 1
+                    if nmf_i > NMF_cutoff:
+                        break
+                params = ci.reshape((len(D_thisz), 1))
+                model = ((D_thisz).T @ params).reshape(len(lamb_data))
             # calculate the model from these parameters and this template
             # model = np.zeros_like(lamb_data)
-            model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+            # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
 
             # calculate the RMS residual
             residual_vs_z_low[k] = np.sum((model - spec_data)**2/err_data**2)
@@ -381,13 +457,39 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
         for k in range(ztrial1_high.shape[0]):
             # make this redshifted template
             D_thisz = apply_redshift1(D,ztrial1_high[k],lamb_D,lamb_data, filter_infos, conv=conv_last)
-            D_thisz = D_thisz/err_data
+            # D_thisz = D_thisz/err_data
 
             # params = inv(D*D')*D*s'
-            params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped
+            # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+            if not NMF:
+                D_thisz = D_thisz/err_data
+                params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+            else:
+                T = D_thisz/err_data**2
+                TT = T @ T.T
+                b = T @ (spec_data/err_data**2)
+                c0 = np.ones(len(D_thisz))
+                score = 1.0
+                ci = c0.copy()
+                nmf_i = 0
+                ci_old = c0.copy()
+                while score >= NMF_tolerance:
+                    ci_old = ci
+                    d = TT @ ci
+                    ci = ci * np.abs(b)/d
+                    score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                    # del ci_old
+                    # if ci == ci_old:    # sometimes tolerance can never be achieve; if the solution doesn't change then break out of while loop
+                    #     break
+                    nmf_i += 1
+                    if nmf_i > NMF_cutoff:
+                        break
+                params = ci.reshape((len(D_thisz), 1))
+                model = ((D_thisz).T @ params).reshape(len(lamb_data))
             # calculate the model from these parameters and this template
             # model = np.zeros_like(lamb_data)
-            model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+            # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
 
             # calculate the RMS residual
             residual_vs_z_high[k] = np.sum((model - spec_data)**2/err_data**2)
@@ -418,8 +520,9 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
         # zhigh_1 = ztrial1_r[np.argmin(np.abs(c_d_area1_r - probline))+1]
         zhigh_1 = ztrial1_r[np.argwhere((c_d_area1_r - probline)>0)[0][0]-1]
 
-        return z,zlow_1,zhigh_1,params,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
+        return z,zlow_1,zhigh_1,params0,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
     
+
 
 # residue and likelihood plots for an individual galaxy
 def igplots(ig, lamb_obs, spec_obs, spec_obs_original, err_obs, lamb_rest, D_rest, zgrid, filter_infos, ztrue, figsize=(10,12)):

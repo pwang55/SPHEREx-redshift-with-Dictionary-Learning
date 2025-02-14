@@ -1,50 +1,61 @@
 # Configure file for main_dictionary_learn.py
 
-Filenames_locations:                              # All locations can be relative or absolute
-  # filename: input_catalogs/cigale_random_sed_att_err_20000.npz   # input catalog
-  # filename: input_catalogs/jean_spherex_data_msnr50p.npz   # input catalog
-  filename: input_catalogs/jean_spherex_data.npz   # input catalog
-  eazy_templates_location: EAZY_1p1_Spectra       # EAZY templates folder location
-  filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
-  OUTPUT: OUTPUTS                                 # Output files directory
-
-Parameters:
-  Ndat: 400                                      # Number of input data to run
-  learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
-  learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
-  SNR: 20                                        # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
-  error_method: 0                                 # 0: use error columns from file, 1: error is 1/SNR*median(fluxes) (all the same value), 
-                                                  # 2: error is 1/SNR*fluxes
-  add_fluctuations: False                         # Add random fluctuations to fluxes based on error columns
-  flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0
-  probline: 0.1585                                # Cumulative probability to evaluate 1-sigma, default 0.317/2
-  Ncalibrators: 100                                # Number of calibration galaxies, default 50
-  Niterations: 3                                  # Number of iterations to train data with
+Catalog:
+    training_catalog: input_catalogs/Jean_spherex_data_1third.npz   # input catalog for training
+    evaluation_catalog: input_catalogs/Jean_spherex_data.npz   # input catalog for evaluation
+    Ndat_training: 4000                             # Number of input training data to train
+    Ndat_evaluation: 10190                          # Number of input fitting catalog
+    error_method: 0                                 # 0: use error from file, 1: error is 1/SNR*median(fluxes) (all the same value), 2: error is 1/SNR*fluxes
+    Ncalibrators: 1000                               # Number of calibration galaxies that will use fixed zspec when training in the beginning
+    calibrator_SNR: 100                             # Minimum SNR at channel 51 for sources to qualify as calibrator sources
+    f_lambda_mode: False                            # Running the code with all fluxes in f_lambda, default: False    
+    SNR: 20                                         # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
+    add_fluctuations: False                         # Add random gaussian fluctuations to fluxes based on error columns, ignore if error_method = 0
+    flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0, ignore if error_method = 0
 
 Dictionary:
-  Ndict: 15                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to
-                                                  # number of dicts in file; if Ndict < number of dicts in file then the rest in file will be ignored
-  num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
-  dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
-  dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
-  dict_scale: 1.0                                 # Additional artificial scaling for dictionaries, default 1.0
-  # read_from_file: initial_dicts/dicts_kmeans_z00_01_15_flambda.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
-  # read_from_file: initial_dicts/jean_hres_kmean15_z0_flambda.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
-  read_from_file: initial_dicts/dict_EAZY_dust10_02.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    read_from_file: initial_dicts/Jean_hres_kmean12_z0_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    # read_from_file: initial_dicts/dicts_eazy7_dust_kean5_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    add_constant: True                             # If true, added a constant dictionary that will not be trained but will be used for fitting
 
-Zgrid:
-  z_fitting_max: 3.0                              # Max allowed fitted redshift
-  zgrid_separation: [0, 0.1, 0.3, 0.5, 1, 1.5] # Optimized zgrid separation points for different stepsizes, excluding the endpoint
-  zgrid_stepsizes: [0.002, 0.005, 0.01, 0.01, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
-  min_zgrid_searchsize: 0.02                      # Optimized zgrid minimum search size in each direction at 2nd stage, default 0.02
-  zgrid_errsearchsize: 0.03                       # Optimized zgrid error search size in each direction, default 0.03
-  fix_z: False                                    # If True, always use ztrue from input file and doesn't perform zgrid search
+    # If you want to initialize dictionaries from EAZY and noise, use settings below (not maintained anymore)
+    Ndict: 15                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to actual number of dictionaries in file
+    num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
+    dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
+    dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
 
-Settings:
-  algorithm: 1                                    # 0: D*p/sum(p^2), psudo-inverse vector method, 1: dictionary learning from arXiv:0908.0050v2
-  update_loops: 5                                 # if algorithm = 1, number of loops to run updates on dictionaries
-  fix_calibration_gals: True                      # Fixing calibration galaxies to the same ones
-  rescale_input: False                            # rescale input to around the same order of magnitude, default: False
-  convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False
-  f_lambda_mode: True                             # Running the code with all fluxes in f_lambda, default: True
+Algorithm:
+    Niterations: 5                                  # Number of iterations to train
+    update_algorithm: 1                             # 0: D*p/sum(p^2), psudo-inverse vector method, 1: dictionary learning from arXiv:0908.0050v2
+    fix_z: True                                     # If True, always use ztrue from input file during all training and doesn't perform zgrid search
+    AB_update_tolerance: 1.0E-3                     # Iterative tolerance for updating A and B matrix
+    max_update_loops: 10                            # if algorithm = 1, MAXIMUM number of loops to run updates on dictionaries in case A & B couldn't converge
+    replace_old_ab_info: True                       # If True, after each epoch, when learning the same spectra again, remove old A and B info
+    NMF: False                                      # If True, use Non-negative Matrix Factorization (requiring all coefficients to be positive)
+    NMF_tolerance: 1.0E-3                           # If NMF=True, iterative tolerance for coefficients when acquiring best-fit solution
+    NMF_cutoff: 20000                               # Max iteration allowed for NMF iteration in case solution can't be found
+    # Setting for update algorithm 0, not maintained anymore
+    learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
+    learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
+
+Fitting:
+    probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
+    fit_training_catalog: False                      # If True, after training, do fitting and create performance plot for JUST training sets
+    prov_z_Niterations: 0                           # Number of iterations in the end that reset D_rest then use provisional redshift to train again
+    prov_z_cold_restart: False                      # If set to true and if FixZ_Niterations>0, when using provisional redshifts to train again, A and B are set to 0
+    convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False
+
+Zgrid:                                              # Note that default zgrid resolution around best-fit is 0.001 regardless of zgrid setting; this is just for efficiency
+    z_fitting_max: 3.0                              # Max allowed fitted redshift
+    zgrid_separation: [0, 0.1, 0.3, 0.5, 1, 1.5]    # Optimized zgrid separation points for different stepsizes, excluding the endpoint
+    zgrid_stepsizes: [0.002, 0.005, 0.01, 0.01, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
+    # zgrid_stepsizes: [0.002, 0.002, 0.005, 0.005, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
+    min_zgrid_searchsize: 0.02                      # Optimized zgrid minimum search size in each direction at 2nd stage, default 0.02
+    zgrid_errsearchsize: 0.03                       # Optimized zgrid error estimation search size in each direction, default 0.03
+
+Directory_locations:                                # All locations can be relative or absolute
+    eazy_templates_location: EAZY_1p1_Spectra       # EAZY templates folder location
+    filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
+    OUTPUT: OUTPUTS                                 # Output files directory       
+
 
