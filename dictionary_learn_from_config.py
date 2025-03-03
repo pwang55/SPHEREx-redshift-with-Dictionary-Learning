@@ -14,7 +14,6 @@ import sys
 import time
 # from numba import jit, njit     # use numba to accelerate key functions in the algorithm (by roughly a factor of 3!)
 # from glob import glob
-from numpy.random import default_rng
 import matplotlib.pyplot as plt
 from pathlib import Path
 import dictionary_learn_fx as fx # type: ignore
