@@ -64,6 +64,9 @@ NMF_tolerance = config['Algorithm']['NMF_tolerance']
 NMF_cutoff = config['Algorithm']['NMF_cutoff']
 learning_rate0 = config['Algorithm']['learning_rate0']
 learning_rate_cali = config['Algorithm']['learning_rate_cali']
+lassolars = config['Algorithm']['LassoLars']    # TESTING
+lars_alpha = config['Algorithm']['Lars_alpha']
+lars_positive = config['Algorithm']['Lars_positive']
 
 # Fitting configurations
 probline = config['Fitting']['probline']
@@ -89,6 +92,12 @@ zgrid = fx.generate_zgrid(zgrid_seps, zgrid_stepsizes, z_fitting_max)
 eazy_templates_location = config['Directory_locations']['eazy_templates_location']
 filter_location = config['Directory_locations']['filter_location']
 output_dirname = config['Directory_locations']['OUTPUT']
+
+# TESTING
+if lassolars:
+    fit_spectrum = fx.fit_spectrum1
+else:
+    fit_spectrum = fx.fit_spectrum
 
 
 
@@ -123,7 +132,7 @@ filter_infos = fx.read_filters(filter_location)
 
 
 
-# TEMP  add a tiny number to z=0.0 to get around zinput issue at z=0.0
+# add a tiny number to z=0.0 to get around zinput issue at z=0.0
 for i in range(len(ztrue)):
     if ztrue[i][0] == 0.0:
         # print('hhh')
@@ -200,11 +209,13 @@ if __name__ == "__main__":
     print(f"Add constant dictionary: {add_constant}")
     print(f"Ncalibrators = {Ncalibrators} (SNR > {calibrator_SNR51})")
     print(f"Fix z in training: {fix_z}")
-    print(f"Non-negative Matrix Factorization: {NMF}")
+    # print(f"Non-negative Matrix Factorization: {NMF}")
     # print(f"Convolving filters: 1st stage:{convolve_filter}, 2nd stage:{last_stage_convolve_filter}, fitting:{fitting_convolve_filter}")
     if algorithm == 0:
         print(f"Learning rates = {learning_rate0}/{learning_rate_cali}")
     else:
+        if lassolars:
+            print(f"LassoLars: {lassolars} (alpha={lars_alpha}, Positive: {lars_positive})")
         print(f"Replace old AB info: {replace_old_ab_info}")
     if dict_read_from_file:
         print(f"Dictionaries:\t{dict_read_from_file}")
@@ -233,9 +244,10 @@ if __name__ == "__main__":
         for i_gal0 in range(Ngal): 
             i_gal = idx_shuffle[i_gal0]
             # update with number of galaxies processed
-            if np.mod(i_gal0,100) == 0:
-                print(f"\r\t{i_gal0}/{Ngal} spectra", end="")
-
+            # if np.mod(i_gal0,100) == 0:
+                # print(f"\r\t{i_gal0}/{Ngal} spectra", end="")
+            print(f"\r\t{i_gal0}/{Ngal} spectra", end="")   # TEMP
+            # print(i_gal)
             # if this is a calibrator galaxy
             # if i_gal in i_calibrator_galaxies or fix_z:
             if i_gal in idx_cali or fix_z:
@@ -246,8 +258,9 @@ if __name__ == "__main__":
                 zinput = False
 
             # fit this spectrum and obtain the redshift
-            z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+            z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
+                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter, error=False)
 
@@ -291,7 +304,11 @@ if __name__ == "__main__":
                     Dj_old = D_rest[j].copy()
                     abi = 0
                     while score >= AB_update_tolerance and abi < max_AB_loops:
-                        uj = 1/np.diagonal(A)[j] * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
+                        # print(np.diagonal(A))
+                        diag_Aj = np.diagonal(A)[j]
+                        if diag_Aj == 0:
+                            diag_Aj = 1e-10 # Avoid NaN
+                        uj = 1/diag_Aj * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
                         uj_norm = np.linalg.norm(uj)
                         D_rest[j] = uj/max(1, uj_norm)
                         score = np.linalg.norm(D_rest[j]-Dj_old)/np.linalg.norm(Dj_old)
@@ -303,12 +320,14 @@ if __name__ == "__main__":
         zbest_provisional = np.zeros(Ngal)
         for i in range(Ngal):
             # update with number of galaxies processed
-            if np.mod(i,100)==0:
+            # if np.mod(i,100)==0:
                 # print('    '+str(i)+' of '+str(Ngal)+' spectra')
-                print(f"\r\t{i}/{Ngal} spectra", end="")
+                # print(f"\r\t{i}/{Ngal} spectra", end="")
+            print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
             # fit this spectrum and obtain the redshift
-            z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+            z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
+                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                        NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=False, conv_first=convolve_filter, conv_last=last_stage_convolve_filter)
             # store the redshift
@@ -334,8 +353,9 @@ if __name__ == "__main__":
                     zinput = ztrue[i_gal][0]
 
                 # fit this spectrum and obtain the redshift
-                z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
+                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                        NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter)
                 
@@ -428,11 +448,13 @@ if __name__ == "__main__":
 
         for i in range(Ngal):
             # update with number of galaxies processed
-            if np.mod(i,100)==0:
-                print(f"\r\t{i}/{Ngal} spectra", end="")
+            # if np.mod(i,100)==0:
+                # print(f"\r\t{i}/{Ngal} spectra", end="")
+            print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
             # fit this spectrum and obtain the redshift
             zinput = False
-            z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, filter_infos=filter_infos,
+            z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
+                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive,
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
             # store the redshift
@@ -446,11 +468,13 @@ if __name__ == "__main__":
         zbest_initial = np.zeros(Ngal)
         print('\nTraining Catalog Untrained Redshift Estimation')
         for i in range(Ngal):
-            if np.mod(i,100)==0:
-                print(f"\r\t{i}/{Ngal} spectra", end="")
+            # if np.mod(i,100)==0:
+                # print(f"\r\t{i}/{Ngal} spectra", end="")
+            print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
             # fit this spectrum and obtain the redshift
             zinput = False
-            z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, filter_infos=filter_infos,
+            z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
+                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive,
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
             zbest_initial[i] = z_bi
@@ -528,13 +552,15 @@ if __name__ == "__main__":
 
     for i in range(Ngal):
         # update with number of galaxies processed
-        if np.mod(i,100)==0:
-            print(f"\r\t{i}/{Ngal} spectra", end="")
+        # if np.mod(i,100)==0:
+            # print(f"\r\t{i}/{Ngal} spectra", end="")
+        print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
 
         # fit this spectrum and obtain the redshift
         zinput = False
-        z,zlow,zhigh,params,model,ztrials,residues = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+        z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
+                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
         # store the redshift
@@ -552,12 +578,14 @@ if __name__ == "__main__":
 
     for i in range(Ngal):
         # update with number of galaxies processed
-        if np.mod(i,100)==0:
-            print(f"\r\t{i}/{Ngal} spectra", end="")
+        # if np.mod(i,100)==0:
+            # print(f"\r\t{i}/{Ngal} spectra", end="")
+        print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
         # fit this spectrum and obtain the redshift
         zinput = False
-        z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+        z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
+                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
         # store the redshift
@@ -634,13 +662,15 @@ if __name__ == "__main__":
     i = 67
     # i = 15
     # refit with the initial dictionary
-    zbest_initial_ex,zlow_initial,zhigh_initial,params_initial,best_model_initial,ztrials_initial,residues_initial = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+    zbest_initial_ex,zlow_initial,zhigh_initial,params_initial,best_model_initial,ztrials_initial,residues_initial = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
+                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter)
     # refit with the trained dictionary
-    zbest_trained_ex,zlow_trained,zhigh_trained,params_trained,best_model,ztrials_best,residues_best = fx.fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+    zbest_trained_ex,zlow_trained,zhigh_trained,params_trained,best_model,ztrials_best,residues_best = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
+                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
+                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter)
         

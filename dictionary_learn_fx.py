@@ -3,7 +3,7 @@ import pandas as pd
 from numba import jit, njit
 import matplotlib.pyplot as plt
 import time
-
+from sklearn.linear_model import LassoLars
 
 c = 3e18
 
@@ -209,7 +209,7 @@ def apply_redshift1(D,z,lamb_in,lamb_out, filter_infos, conv=False):
 
 # Adaptive grid search with increasing step size toward higher z
 @jit(nopython=True,fastmath=True)
-def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos, NMF=False, NMF_tolerance=1e-3, NMF_cutoff=20000,
+def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos, alpha, lars_positive, NMF=False, NMF_tolerance=1e-3, NMF_cutoff=20000,
                  zgrid_searchsize=0.02, zgrid_errsearchsize=0.03, z_fitting_max=2.0, probline=0.317/2, 
                  zinput=False, conv_first=False, conv_last=False, error=False, second_stage=True):
     # reshape array in preparation for later calculation
@@ -522,6 +522,351 @@ def fit_spectrum(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos,
 
         return z,zlow_1,zhigh_1,params0,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
     
+
+# TESTING
+# Adaptive grid search with increasing step size toward higher z
+# testing LarsLasso with scikit-learn
+# @jit(nopython=True,fastmath=True)
+def fit_spectrum1(lamb_data, spec_data, err_data, lamb_D, D, zgrid, filter_infos, alpha, lars_positive, NMF=False, NMF_tolerance=1e-3, NMF_cutoff=20000,
+                 zgrid_searchsize=0.02, zgrid_errsearchsize=0.03, z_fitting_max=2.0, probline=0.317/2, 
+                 zinput=False, conv_first=False, conv_last=False, error=False, second_stage=True):
+    # reshape array in preparation for later calculation
+    spec_data_reshaped = np.reshape(spec_data/err_data,(len(spec_data/err_data),1))
+    spec_data_wt = spec_data/err_data
+    lassolars1 = LassoLars(alpha=alpha, positive=lars_positive)
+    ztrial0 = zgrid.copy()
+    ztrial = np.arange(0, 0.1, 0.001)
+
+    if not zinput:
+        # consider each redshift from 0-2
+        ztrial0 = zgrid.copy()
+        # calculate residual at each redshift
+        residual_vs_z0 = np.inf + np.zeros_like(ztrial0) # initialize to infinity
+        # loop over trial redshifts
+        for k in range(ztrial0.shape[0]):
+            # make this redshifted template
+            D_thisz = apply_redshift1(D,ztrial0[k],lamb_D,lamb_data, filter_infos, conv=conv_first)
+
+            # params = inv(D*D')*D*s'
+            if not NMF:
+                D_thisz = D_thisz/err_data
+                # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+                lassolars1.fit(D_thisz.T, spec_data_wt)
+                coef1 = lassolars1.coef_
+                params = coef1[:,None]
+                model = (D_thisz.T @ coef1 + lassolars1.intercept_) * err_data
+
+            else:
+                T = D_thisz/err_data**2
+                TT = T @ T.T
+                b = T @ (spec_data/err_data**2)
+                c0 = np.ones(len(D_thisz))
+                score = 1.0
+                ci = c0.copy()
+                nmf_i = 0
+                ci_old = c0.copy()
+                while score >= NMF_tolerance:
+                    # print('here')
+                    ci_old = ci
+                    d = TT @ ci
+                    ci = ci * np.abs(b)/d
+                    score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                    nmf_i += 1
+                    if nmf_i > NMF_cutoff:
+                        break
+                    # del ci_old
+                params = ci.reshape((len(D_thisz), 1))
+                model = ((D_thisz).T @ params).reshape(len(lamb_data))
+
+            # calculate the model from these parameters and this template
+            # model = np.zeros_like(lamb_data)
+            # for i in range(D.shape[0]):
+                # model += params[i]*D_thisz[i,:]
+
+            # calculate the RMS residual
+            residual_vs_z0[k] = np.sum((model - spec_data)**2/err_data**2)
+        
+        # find the trial redshift with the lowest residual
+        kbest = int(np.where(residual_vs_z0 == np.min(residual_vs_z0))[0][0])
+        residues0 = residual_vs_z0.copy()    # save this residue for error estimation later
+        # note the redshift with the lowest residual
+        z = ztrial0[kbest]
+        # if kbest > 0:
+        #     zmin = ztrial0[kbest-1]
+
+        # create second round ztrial and residues regardless for output format purpose
+        zmin = z - zgrid_searchsize
+        zmax = z + zgrid_searchsize
+        if zmin < 0:
+            zmin = 0.0
+        if zmax > z_fitting_max:
+            zmax = z_fitting_max
+        ztrial = np.arange(zmin, zmax, 0.001)
+        residual_vs_z = np.inf + np.zeros_like(ztrial) # initialize to infinity
+        # second round
+        if second_stage:
+            # calculate residual at each redshift
+            # loop over trial redshifts
+            for k in range(ztrial.shape[0]):
+                # make this redshifted template
+                D_thisz = apply_redshift1(D,ztrial[k],lamb_D,lamb_data, filter_infos, conv=conv_last)
+                # D_thisz = D_thisz/err_data
+                # params = inv(D*D')*D*s'
+                # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                if not NMF:
+                    D_thisz = D_thisz/err_data
+                    # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                    # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+                    lassolars1.fit(D_thisz.T, spec_data_wt)
+                    coef1 = lassolars1.coef_
+                    params = coef1[:,None]
+                    model = (D_thisz.T @ coef1 + lassolars1.intercept_) * err_data
+
+                else:
+                    T = D_thisz/err_data**2
+                    TT = T @ T.T
+                    b = T @ (spec_data/err_data**2)
+                    c0 = np.ones(len(D_thisz))
+                    score = 1.0
+                    ci = c0.copy()
+                    nmf_i = 0
+                    ci_old = c0.copy()
+                    while score >= NMF_tolerance:
+                        ci_old = ci
+                        d = TT @ ci
+                        ci = ci * np.abs(b)/d
+                        score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                        nmf_i += 1
+                        # del ci_old
+                        if nmf_i > NMF_cutoff:
+                            break
+                    params = ci.reshape((len(D_thisz), 1))
+                    model = ((D_thisz).T @ params).reshape(len(lamb_data))
+                # calculate the model from these parameters and this template
+                # model = np.zeros_like(lamb_data)
+                # for i in range(D.shape[0]):
+                    # model += params[i]*D_thisz[i,:]
+                # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+
+                # calculate the RMS residual
+                residual_vs_z[k] = np.sum((model - spec_data)**2/err_data**2)
+            
+            # find the trial redshift with the lowest residual
+            kbest = int(np.where(residual_vs_z == np.min(residual_vs_z))[0][0])
+            # note the redshift with the lowest residual
+            z = ztrial[kbest]        
+
+    else:
+        z = zinput
+        error = False
+    # redo the fit at this redshift
+    # make this redshifted template
+    D_thisz = apply_redshift1(D,z,lamb_D,lamb_data, filter_infos, conv=conv_last)
+    # D_thisz = D_thisz/err_data
+
+    # fit the data to this template
+    # params = inv(D*D')*D*s'
+    # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+    if not NMF:
+        D_thisz = D_thisz/err_data
+        # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+        # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+        lassolars1.fit(D_thisz.T, spec_data_wt)
+        coef1 = lassolars1.coef_
+        params = coef1[:,None]
+        model = (D_thisz.T @ coef1 + lassolars1.intercept_) * err_data
+    else:
+        T = D_thisz/err_data**2
+        TT = T @ T.T
+        b = T @ (spec_data/err_data**2)
+        c0 = np.ones(len(D_thisz))
+        score = 1.0
+        ci = c0.copy()
+        nmf_i = 0
+        ci_old = c0.copy()
+        while score >= NMF_tolerance:
+            # print(score)
+            ci_old = ci
+            d = TT @ ci
+            ci = ci * np.abs(b)/d
+            score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+            nmf_i += 1
+            if nmf_i > NMF_cutoff:
+                # print(spec_data[0], '\t', nmf_i, '\t', score)
+                break
+            # del ci_old
+        # print(nmf_i)
+        params = ci.reshape((len(D_thisz), 1))
+        model = ((D_thisz).T @ params).reshape(len(lamb_data))
+    # calculate the model for these parameters and this template
+    # model = np.zeros_like(lamb_data)
+    # for i in range(D.shape[0]):
+        # model += params[i]*D_thisz[i,:]
+    # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+    model0 = model.copy()
+    if zinput:
+        residues0 = np.array([np.sum((model - spec_data)**2/err_data**2)])
+        residual_vs_z = np.array([np.sum((model - spec_data)**2/err_data**2)])
+
+    params0 = params.copy()
+    if not error:
+        return z,0.0,0.0,params0,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
+
+    else:
+        min_res = np.min(residues0)
+        prob0 = np.exp(-(residues0-min_res)/2)
+        # calculate integration and normalize prob0
+        dz0 = np.diff(ztrial0)
+        dprob0 = np.diff(prob0)
+        d_area0 = dz0 * (prob0[:-1] + 0.5*dprob0)
+        total_prob0 = np.sum(d_area0)
+        prob0 = prob0/total_prob0
+        d_area0 = d_area0/total_prob0
+
+        c_d_area0 = np.cumsum(d_area0)  # cumulative area from z=0
+        # zlow_0 = ztrial0[np.argmin(np.abs(c_d_area0 - probline))]
+        zlow_0 = ztrial0[np.argwhere((c_d_area0 - probline)>0)[0][0]]
+        # reverse cumulative area
+        ztrial0_r = ztrial0[::-1]
+        c_d_area0_r = np.cumsum(d_area0[::-1])
+        # zhigh_0 = ztrial0_r[np.argmin(np.abs(c_d_area0_r - probline))+1]    # because it is reverse the index had to be added by 1
+        zhigh_0 = ztrial0_r[np.argwhere((c_d_area0_r - probline)>0)[0][0]-1]
+
+        # second round with more precision
+        zlow_zmin = zlow_0 - zgrid_errsearchsize
+        zlow_zmax = zlow_0 + zgrid_errsearchsize
+        if zlow_zmin < 0:
+            zlow_zmin = 0.0
+        if zlow_zmax > z_fitting_max:
+            zlow_zmax = z_fitting_max
+        ztrial1_low = np.arange(zlow_zmin, zlow_zmax, 0.001)
+        residual_vs_z_low = np.inf + np.zeros_like(ztrial1_low)
+        for k in range(ztrial1_low.shape[0]):
+            # make this redshifted template
+            D_thisz = apply_redshift1(D,ztrial1_low[k],lamb_D,lamb_data, filter_infos, conv=conv_last)
+            # D_thisz = D_thisz/err_data
+
+            # params = inv(D*D')*D*s'
+            # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+            if not NMF:
+                D_thisz = D_thisz/err_data
+                # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+                lassolars1.fit(D_thisz.T, spec_data_wt)
+                coef1 = lassolars1.coef_
+                params = coef1[:,None]
+                model = (D_thisz.T @ coef1 + lassolars1.intercept_) * err_data
+            else:
+                T = D_thisz/err_data**2
+                TT = T @ T.T
+                b = T @ (spec_data/err_data**2)
+                c0 = np.ones(len(D_thisz))
+                score = 1.0
+                ci = c0.copy()
+                nmf_i = 0
+                ci_old = c0.copy()
+                while score >= NMF_tolerance:
+                    ci_old = ci
+                    d = TT @ ci
+                    ci = ci * np.abs(b)/d
+                    score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                    # del ci_old
+                    # if ci == ci_old:    # sometimes tolerance can never be achieve; if the solution doesn't change then break out of while loop
+                    #     break
+                    nmf_i += 1
+                    if nmf_i > NMF_cutoff:
+                        break
+                params = ci.reshape((len(D_thisz), 1))
+                model = ((D_thisz).T @ params).reshape(len(lamb_data))
+            # calculate the model from these parameters and this template
+            # model = np.zeros_like(lamb_data)
+            # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+
+            # calculate the RMS residual
+            residual_vs_z_low[k] = np.sum((model - spec_data)**2/err_data**2)
+
+        zhigh_zmin = zhigh_0 - zgrid_errsearchsize
+        zhigh_zmax = zhigh_0 + zgrid_errsearchsize
+        if zhigh_zmin < 0:
+            zhigh_zmin = 0.0
+        if zhigh_zmax > z_fitting_max:
+            zhigh_zmax = z_fitting_max
+        ztrial1_high = np.arange(zhigh_zmin, zhigh_zmax, 0.001)
+        residual_vs_z_high = np.inf + np.zeros_like(ztrial1_high)
+        for k in range(ztrial1_high.shape[0]):
+            # make this redshifted template
+            D_thisz = apply_redshift1(D,ztrial1_high[k],lamb_D,lamb_data, filter_infos, conv=conv_last)
+            # D_thisz = D_thisz/err_data
+
+            # params = inv(D*D')*D*s'
+            # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+            if not NMF:
+                D_thisz = D_thisz/err_data
+                # params = np.linalg.inv(D_thisz @ D_thisz.transpose()) @ D_thisz @ spec_data_reshaped    # TESTING
+                # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+                lassolars1.fit(D_thisz.T, spec_data_wt)
+                coef1 = lassolars1.coef_
+                params = coef1[:,None]
+                model = (D_thisz.T @ coef1 + lassolars1.intercept_) * err_data
+            else:
+                T = D_thisz/err_data**2
+                TT = T @ T.T
+                b = T @ (spec_data/err_data**2)
+                c0 = np.ones(len(D_thisz))
+                score = 1.0
+                ci = c0.copy()
+                nmf_i = 0
+                ci_old = c0.copy()
+                while score >= NMF_tolerance:
+                    ci_old = ci
+                    d = TT @ ci
+                    ci = ci * np.abs(b)/d
+                    score = (np.sum(np.abs(ci-ci_old)))/(np.sum(ci_old))
+                    # del ci_old
+                    # if ci == ci_old:    # sometimes tolerance can never be achieve; if the solution doesn't change then break out of while loop
+                    #     break
+                    nmf_i += 1
+                    if nmf_i > NMF_cutoff:
+                        break
+                params = ci.reshape((len(D_thisz), 1))
+                model = ((D_thisz).T @ params).reshape(len(lamb_data))
+            # calculate the model from these parameters and this template
+            # model = np.zeros_like(lamb_data)
+            # model = ((D_thisz*err_data).T @ params).reshape(len(lamb_data))
+
+            # calculate the RMS residual
+            residual_vs_z_high[k] = np.sum((model - spec_data)**2/err_data**2)
+
+        # combine residues[0] with two more residue arrays
+        ztrial1_unsorted = np.concatenate((ztrial0, ztrial1_low, ztrial1_high))
+
+        sort_idx = np.argsort(ztrial1_unsorted)
+        ztrial1 = ztrial1_unsorted[sort_idx]
+        residues1 = np.concatenate((residues0, residual_vs_z_low, residual_vs_z_high))
+        min_res = np.min(residues1)
+        prob1 = np.exp(-(residues1[sort_idx]-min_res)/2)
+        dz1 = np.diff(ztrial1)
+        dprob1 = np.diff(prob1)
+        d_area1 = dz1 * (prob1[:-1] + 0.5*dprob1)
+        total_prob1 = np.sum(d_area1)
+        # total_prob1 = np.trapz(prob1, x=ztrial1)
+        prob1 = prob1/total_prob1
+        d_area1 = d_area1/total_prob1
+
+        c_d_area1 = np.cumsum(d_area1)
+        # zlow_1 = ztrial1[np.argmin(np.abs(c_d_area1 - probline))]
+        zlow_1 = ztrial1[np.argwhere((c_d_area1 - probline)>0)[0][0]]
+
+        # reverse cumulative area
+        ztrial1_r = ztrial1[::-1]
+        c_d_area1_r = np.cumsum(d_area1[::-1])
+        # zhigh_1 = ztrial1_r[np.argmin(np.abs(c_d_area1_r - probline))+1]
+        zhigh_1 = ztrial1_r[np.argwhere((c_d_area1_r - probline)>0)[0][0]-1]
+
+        return z,zlow_1,zhigh_1,params0,model0,(ztrial0,ztrial),(residues0,residual_vs_z)
+
+
 
 
 # residue and likelihood plots for an individual galaxy

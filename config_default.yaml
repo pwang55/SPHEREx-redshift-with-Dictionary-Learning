@@ -37,7 +37,10 @@ Algorithm:
     # Setting for update algorithm 0, not maintained anymore
     learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
     learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
-
+    LassoLars: True                                # TESTING True to use fit_spectrum that use scikit-learn LarsLasso that is not numba supported (slow!)
+    Lars_alpha: 0.1
+    Lars_positive: True
+    
 Fitting:
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
     fit_training_catalog: False                      # If True, after training, do fitting and create performance plot for JUST training sets
