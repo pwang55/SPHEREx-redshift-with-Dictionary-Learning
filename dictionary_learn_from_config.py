@@ -56,17 +56,16 @@ dict_fluctuation_scaling_base = config['Dictionary']['dict_fluctuation_scaling_b
 Niterations = config['Algorithm']['Niterations']
 algorithm = config['Algorithm']['update_algorithm']             # choose which algorithm to use for dictionary updates, 0: psudo-inverse vector method, 1: paper method
 fix_z = config['Algorithm']['fix_z']
+centering = config['Algorithm']['Centering']
 AB_update_tolerance = config['Algorithm']['AB_update_tolerance']
 max_AB_loops = config['Algorithm']['max_update_loops']            # if algorithm = 1, number of loops to run updates on dictionaries
 replace_old_ab_info = config['Algorithm']['replace_old_ab_info']
-NMF = config['Algorithm']['NMF']
-NMF_tolerance = config['Algorithm']['NMF_tolerance']
-NMF_cutoff = config['Algorithm']['NMF_cutoff']
 learning_rate0 = config['Algorithm']['learning_rate0']
 learning_rate_cali = config['Algorithm']['learning_rate_cali']
-lassolars = config['Algorithm']['LassoLars']    # TESTING
-lars_alpha = config['Algorithm']['Lars_alpha']
-lars_positive = config['Algorithm']['Lars_positive']
+lassolars = config['Algorithm']['LARSlasso']
+lars_alpha = config['Algorithm']['LARSlasso_alpha']
+lars_positive = config['Algorithm']['LARSlasso_positive']
+LARSlasso_alpha_scaling = config['Algorithm']['LARSlasso_alpha_scaling']
 
 # Fitting configurations
 probline = config['Fitting']['probline']
@@ -93,16 +92,12 @@ eazy_templates_location = config['Directory_locations']['eazy_templates_location
 filter_location = config['Directory_locations']['filter_location']
 output_dirname = config['Directory_locations']['OUTPUT']
 
-# TESTING
-if lassolars:
-    fit_spectrum = fx.fit_spectrum1
-else:
-    fit_spectrum = fx.fit_spectrum
-
+# TEMP
+fit_spectrum = fx.fit_spectrum
 
 
 # Read input file and get all necessary information
-ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs = fx.read_file(training_catalog, Ndat=Ndat, 
+ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs = fx.read_file(training_catalog, Ndat=Ndat, centering=centering,
                                     error_method=error_method, SNR=SNR, f_lambda_mode=f_lambda_mode,  
                                     add_fluctuations=add_fluctuations, flux_fluctuation_scaling=flux_fluctuation_scaling)
 
@@ -115,8 +110,6 @@ snr_obs = spec_obs/err_obs
 h_cali = snr_obs[:,51] > calibrator_SNR51
 idx_original = np.arange(Ngal)  # index corresponding to read input
 idx_cali = idx_original[h_cali][:Ncalibrators] # index for calibration galaxies within read input
-
-
 
 # Make sure directory strings have "/" at the end; if output directory doesn't exist, create one
 if len(output_dirname) > 0 and output_dirname[-1] != '/':
@@ -162,12 +155,16 @@ if dict_read_from_file:
         Ndict = len(D_rest)
     else:
         D_rest = D_rest[:Ndict]
+    D_rest = D_rest/np.linalg.norm(D_rest,axis=1)[:,None]
     if f_lambda_mode and not D_rest_input['save_flambda']:
         D_rest = fx.fnu2flambda(lamb_rest*1e5, D_rest)
         D_rest = D_rest/np.linalg.norm(D_rest,axis=1)[:,None]
     elif not f_lambda_mode and D_rest_input['save_flambda']:
         D_rest = fx.flambda2fnu(lamb_rest*1e5, D_rest)
-        D_rest = D_rest/np.linalg.norm(D_rest,axis=1)[:,None]        
+        D_rest = D_rest/np.linalg.norm(D_rest,axis=1)[:,None]
+    if centering:
+        D_rest = D_rest - np.mean(D_rest, axis=1)[:,None]
+        D_rest = D_rest/np.linalg.norm(D_rest,axis=1)[:,None]
     if add_constant:
         D_rest = np.vstack((D_rest, np.ones_like(lamb_rest)))
     # lamb_rest_resolution = np.diff(lamb_rest)[0]
@@ -180,6 +177,9 @@ else:
 templates_EAZY = fx.load_EAZY(lamb_rest, eazy_templates_location)
 if not f_lambda_mode:
     templates_EAZY = fx.flambda2fnu(lamb_rest*10000, templates_EAZY)
+templates_EAZY = np.array(templates_EAZY)
+if centering:
+    templates_EAZY = templates_EAZY - np.mean(templates_EAZY, axis=1)[:,None]
 
 # initialize dictionaries
 if not dict_read_from_file:
@@ -216,6 +216,9 @@ if __name__ == "__main__":
     else:
         if lassolars:
             print(f"LassoLars: {lassolars} (alpha={lars_alpha}, Positive: {lars_positive})")
+        else:
+            print(f"LassoLars: {lassolars}")
+        print(f"Centering: {centering}")
         print(f"Replace old AB info: {replace_old_ab_info}")
     if dict_read_from_file:
         print(f"Dictionaries:\t{dict_read_from_file}")
@@ -259,8 +262,7 @@ if __name__ == "__main__":
 
             # fit this spectrum and obtain the redshift
             z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter, error=False)
 
@@ -326,8 +328,7 @@ if __name__ == "__main__":
             print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
             # fit this spectrum and obtain the redshift
             z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                        NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=False, conv_first=convolve_filter, conv_last=last_stage_convolve_filter)
             # store the redshift
@@ -354,8 +355,7 @@ if __name__ == "__main__":
 
                 # fit this spectrum and obtain the redshift
                 z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                        NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter)
                 
@@ -422,7 +422,7 @@ if __name__ == "__main__":
     templates_figsize = (12,10)
     tick_fontsize = 6
 
-    fig, axs = plt.subplots(Ndict, 2, figsize=templates_figsize, num=2)
+    fig, axs = plt.subplots(Ndict, 2, figsize=templates_figsize, num=0)
     for i in range(Ndict):
         axs[i,0].plot(lamb_rest, D_rest_initial[i], alpha=0.8, linewidth=1)
         axs[i,0].plot(lamb_rest, D_rest[i], alpha=0.8, linewidth=1)
@@ -454,7 +454,7 @@ if __name__ == "__main__":
             # fit this spectrum and obtain the redshift
             zinput = False
             z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive,
+                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling,
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
             # store the redshift
@@ -474,7 +474,7 @@ if __name__ == "__main__":
             # fit this spectrum and obtain the redshift
             zinput = False
             z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive,
+                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling,
                                                         zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                         zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
             zbest_initial[i] = z_bi
@@ -494,7 +494,7 @@ if __name__ == "__main__":
 
         # plot redshift reconstruction
         zpzs_figsize = (10,10)
-        fig1, axs1 = plt.subplots(2,1, figsize=zpzs_figsize, num=3, gridspec_kw={'height_ratios': [3,1]})
+        fig1, axs1 = plt.subplots(2,1, figsize=zpzs_figsize, num=1, gridspec_kw={'height_ratios': [3,1]})
         lim_offset = 0.05
         axs1[0].set_xlim(0-lim_offset, z_fitting_max+lim_offset)
         axs1[0].set_ylim(0-lim_offset, z_fitting_max+lim_offset)
@@ -538,7 +538,7 @@ if __name__ == "__main__":
 
     # Fitting on fitting_catalog
     # Read the fitting catalog first
-    ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs = fx.read_file(evaluation_catalog, Ndat=Ndat_evaluation,
+    ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs = fx.read_file(evaluation_catalog, Ndat=Ndat_evaluation, centering=centering,
                                     error_method=error_method, SNR=SNR, f_lambda_mode=f_lambda_mode, 
                                     add_fluctuations=add_fluctuations, flux_fluctuation_scaling=flux_fluctuation_scaling)
 
@@ -559,8 +559,7 @@ if __name__ == "__main__":
         # fit this spectrum and obtain the redshift
         zinput = False
         z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
         # store the redshift
@@ -584,8 +583,7 @@ if __name__ == "__main__":
         # fit this spectrum and obtain the redshift
         zinput = False
         z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
         # store the redshift
@@ -610,7 +608,7 @@ if __name__ == "__main__":
 
     # plot redshift reconstruction
     zpzs_figsize = (10,10)
-    fig2, axs2 = plt.subplots(2,1, figsize=zpzs_figsize, num=4, gridspec_kw={'height_ratios': [3,1]})
+    fig2, axs2 = plt.subplots(2,1, figsize=zpzs_figsize, num=2, gridspec_kw={'height_ratios': [3,1]})
     lim_offset = 0.05
     axs2[0].set_xlim(0-lim_offset,z_fitting_max+lim_offset)
     axs2[0].set_ylim(0-lim_offset,z_fitting_max+lim_offset)
@@ -656,6 +654,19 @@ if __name__ == "__main__":
     np.savez_compressed(output_dirname+'estimated_redshifts.npz', ztrue=ztrue, zest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
              zest_initial=zbest_initial, zlow_initial=zlow_initial, zhigh_initial=zhigh_initial, params=params_trained, idx_cali=idx_cali)
 
+    # Sparsity plot
+    if lassolars:
+        fig, ax = plt.subplots(figsize=(8,6), num=3)
+        p = params_trained.reshape((Ngal, Ndict+add_constant))
+        param_zeros = np.zeros(Ndict+1, dtype=int)
+        for i in range(Ngal):
+            p1 = p[i]
+            num_zeros = np.sum(p1==0)
+            param_zeros[num_zeros] += 1
+        ax.bar(np.arange(Ndict+1), param_zeros)
+        ax.set_title('Number of zeros in coefficients')
+        fig.tight_layout()
+        plt.savefig(output_dirname+'sparsity_bars.png')
 
     # for comparison, fit a single spectrum with the initial and trained template
     # select galaxy
@@ -663,19 +674,17 @@ if __name__ == "__main__":
     # i = 15
     # refit with the initial dictionary
     zbest_initial_ex,zlow_initial,zhigh_initial,params_initial,best_model_initial,ztrials_initial,residues_initial = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter)
     # refit with the trained dictionary
     zbest_trained_ex,zlow_trained,zhigh_trained,params_trained,best_model,ztrials_best,residues_best = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, alpha=lars_alpha, lars_positive=lars_positive, 
-                                                    NMF=NMF, NMF_tolerance=NMF_tolerance, NMF_cutoff=NMF_cutoff,
+                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
                                                     zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
                                                     zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter)
         
     # plot single fitted spectrum
-    plt.figure(num=6)
+    plt.figure(num=4)
     plt.clf()
     plt.errorbar(lamb_obs, spec_obs[i,:], err_obs[i,:], fmt='o', markersize=3, markerfacecolor='none', markeredgecolor='cadetblue', markeredgewidth=0.5, capsize=2, elinewidth=0.5, alpha=0.6, label="Photometry")
     plt.plot(lamb_obs, spec_obs_original[i,:], '.', color='green', markersize=3, alpha=0.7, label="Ground Truth")

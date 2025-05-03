@@ -14,10 +14,10 @@ Catalog:
     flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0, ignore if error_method = 0
 
 Dictionary:
-    read_from_file: initial_dicts/Jean_hres_kmean12_z0_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
-    # read_from_file: initial_dicts/dicts_eazy7_dust_kean5_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    # read_from_file: initial_dicts/Jean_hres_kmean12_z0_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    read_from_file: initial_dicts/dicts_eazy7_dust_kean5_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
     add_constant: True                             # If true, added a constant dictionary that will not be trained but will be used for fitting
-
+    
     # If you want to initialize dictionaries from EAZY and noise, use settings below (not maintained anymore)
     Ndict: 15                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to actual number of dictionaries in file
     num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
@@ -28,19 +28,19 @@ Algorithm:
     Niterations: 5                                  # Number of iterations to train
     update_algorithm: 1                             # 0: D*p/sum(p^2), psudo-inverse vector method, 1: dictionary learning from arXiv:0908.0050v2
     fix_z: True                                     # If True, always use ztrue from input file during all training and doesn't perform zgrid search
+    Centering: False                                # If True, center all initial dictionaries (and normalized) and input catalog, default=False
     AB_update_tolerance: 1.0E-3                     # Iterative tolerance for updating A and B matrix
     max_update_loops: 10                            # if algorithm = 1, MAXIMUM number of loops to run updates on dictionaries in case A & B couldn't converge
     replace_old_ab_info: True                       # If True, after each epoch, when learning the same spectra again, remove old A and B info
-    NMF: False                                      # If True, use Non-negative Matrix Factorization (requiring all coefficients to be positive)
-    NMF_tolerance: 1.0E-3                           # If NMF=True, iterative tolerance for coefficients when acquiring best-fit solution
-    NMF_cutoff: 20000                               # Max iteration allowed for NMF iteration in case solution can't be found
+    LARSlasso: False                                # If True, use LARS-lasso to find sparse solution for template fitting
+    LARSlasso_alpha: 0.001                          # Minimum required correlation between atoms and residue during LARSlasso
+    LARSlasso_positive: False                       # If True, require positive fitted coefficients
+    LARSlasso_alpha_scaling: False                  # If True, alpha in each step will be alpha/n_sample (consistent with Lasso definition), default=False
     # Setting for update algorithm 0, not maintained anymore
     learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
     learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
-    LassoLars: True                                # TESTING True to use fit_spectrum that use scikit-learn LarsLasso that is not numba supported (slow!)
-    Lars_alpha: 0.1
-    Lars_positive: True
-    
+
+
 Fitting:
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
     fit_training_catalog: False                      # If True, after training, do fitting and create performance plot for JUST training sets
