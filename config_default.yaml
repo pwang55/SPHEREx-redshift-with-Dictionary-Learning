@@ -1,64 +1,71 @@
 # Configure file for main_dictionary_learn.py
 
 Catalog:
-    training_catalog: input_catalogs/Jean_spherex_data.npz   # input catalog for training
+    training_catalog: input_catalogs/deepfield_selected.npz   # input catalog for training
+    # training_catalog: input_catalogs/deepfield_plus_10k_snr50p.npz   # input catalog for training
     evaluation_catalog: input_catalogs/Jean_spherex_data.npz   # input catalog for evaluation
-    Ndat_training: 3000                             # Number of input training data to train
-    Ndat_evaluation: 10190                          # Number of input fitting catalog
-    error_method: 0                                 # 0: use error from file, 1: error is 1/SNR*median(fluxes) (all the same value), 2: error is 1/SNR*fluxes
-    Ncalibrators: 1000                              # Number of calibration galaxies that will use fixed zspec when training in the beginning, even if fix_z=True
+    # evaluation_catalog: input_catalogs/quickcat_110k_selected.npz   # input catalog for evaluation
+    Ndat_training: 20000                            # Number of input training data to train
+    Ndat_evaluation: 20000                          # Number of input fitting catalog
+    use_DESI_flag: True                             # If true, when DESI_flag=1, fix redshift, will ignore Ncalibrators
+    Ncalibrators: 0                              # Number of calibration galaxies that will use fixed zspec when training in the beginning, even if fix_z=True
     calibrator_SNR: 100                             # Minimum SNR at channel 51 for sources to qualify as calibrator sources
     f_lambda_mode: False                            # Running the code with all fluxes in f_lambda, default: False    
-    SNR: 20                                         # Uncertainty SNR compared to median flux of all input galaxies, ignored if error_method = 0
-    add_fluctuations: False                         # Add random gaussian fluctuations to fluxes based on error columns, ignore if error_method = 0
-    flux_fluctuation_scaling: 1.0                   # Additional artificial scaling when generating flux fluctuation, default 1.0, ignore if error_method = 0
 
 Dictionary:
     # read_from_file: initial_dicts/Jean_hres_kmean12_z0_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
-    read_from_file: initial_dicts/dicts_eazy7_dust_kean5_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    read_from_file: initial_dicts/dicts_eazy7_dust_kmean3_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
     add_constant: True                             # If true, added a constant dictionary that will not be trained but will be used for fitting
-    
-    # If you want to initialize dictionaries from EAZY and noise, use settings below (not maintained anymore)
+    Fix_dicts: 0                                    # How many dictionaries to be fixed at the end, not including constant; N dicts counting from the end will not be updated
     Ndict: 15                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to actual number of dictionaries in file
+
+    # If you want to initialize dictionaries from EAZY and noise, use settings below (not maintained anymore)
     num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
     dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
     dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
 
 Algorithm:
     Niterations: 5                                  # Number of iterations to train
-    update_algorithm: 1                             # 0: D*p/sum(p^2), psudo-inverse vector method, 1: dictionary learning from arXiv:0908.0050v2
+    update_algorithm: 1                             # 0: D*p/sum(p^2), psudo-inverse vector method, 1: Block-coordinate descent from arXiv:0908.0050v2
     fix_z: True                                     # If True, always use ztrue from input file during all training and doesn't perform zgrid search
     Centering: False                                # If True, center all initial dictionaries (and normalized) and input catalog, default=False
     AB_update_tolerance: 1.0E-3                     # Iterative tolerance for updating A and B matrix
     max_update_loops: 10                            # if algorithm = 1, MAXIMUM number of loops to run updates on dictionaries in case A & B couldn't converge
-    replace_old_ab_info: True                       # If True, after each epoch, when learning the same spectra again, remove old A and B info
-    LARSlasso: False                                # If True, use LARS-lasso to find sparse solution for template fitting
-    LARSlasso_alpha: 0.001                          # Minimum required correlation between atoms and residue during LARSlasso
-    LARSlasso_positive: False                       # If True, require positive fitted coefficients
-    LARSlasso_alpha_scaling: False                  # If True, alpha in each step will be alpha/n_sample (consistent with Lasso definition), default=False
+    remove_old_ab_info: True                        # If True, after each epoch, when learning the same spectra again, remove old A and B info
     # Setting for update algorithm 0, not maintained anymore
-    learning_rate0: 0.5                             # Regular learning rate, not used when algorithm = 1
-    learning_rate_cali: 1.0                         # Learning rate for calibration objects, not used when algorithm = 1
+    learning_rate0: 0.005                            # Regular learning rate, not used when algorithm = 1
+    learning_rate_cali: 0.01                         # Learning rate for calibration objects, not used when algorithm = 1
 
+LARSlasso:        
+    LARSlasso: True                                 # If True, use LARS-lasso to find sparse solution for template fitting
+    alpha: 0.008                                     # Minimum required correlation between atoms and residue during LARSlasso
+    alpha_sigma: 0                                  # In addition to alpha above, how many sigma of correlation as minimum alpha
+    positive: True                                  # If True, require positive fitted coefficients
+    alpha_selection_only: False                     # If True, only use the alpha as active dictionary selection, and coefficient are determined with OLS with active sets in training
+    alpha_selection_only_fitting: False             # If True, during fitting use OLS solution with active sets
+    alpha_scaling: False                            # If True, alpha in each step will be alpha/n_sample (consistent with Lasso definition), default=False
 
 Fitting:
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
     fit_training_catalog: False                      # If True, after training, do fitting and create performance plot for JUST training sets
-    prov_z_Niterations: 0                           # Number of iterations in the end that reset D_rest then use provisional redshift to train again
-    prov_z_cold_restart: False                      # If set to true and if FixZ_Niterations>0, when using provisional redshifts to train again, A and B are set to 0
     convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False
 
 Zgrid:                                              # Note that default zgrid resolution around best-fit is 0.001 regardless of zgrid setting; this is just for efficiency
-    z_fitting_max: 3.0                              # Max allowed fitted redshift
-    zgrid_separation: [0, 0.1, 0.3, 0.5, 1, 1.5]    # Optimized zgrid separation points for different stepsizes, excluding the endpoint
-    zgrid_stepsizes: [0.002, 0.005, 0.01, 0.01, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
-    # zgrid_stepsizes: [0.002, 0.002, 0.005, 0.005, 0.01, 0.02] # Optimized zgrid step sizes in each separations, must be same length as zgrid_separation
-    min_zgrid_searchsize: 0.02                      # Optimized zgrid minimum search size in each direction at 2nd stage, default 0.02
-    zgrid_errsearchsize: 0.03                       # Optimized zgrid error estimation search size in each direction, default 0.03
+    zmax: 3.0                                       # Max allowed fitted redshift
+    zmin: 0.0                                       # Min allowed fitted redshift
+    dz: 0.002                                       # Step size for zgrid, default=0.002
+    scale_1plusz: True                              # if True, zgrid scale as dz(1+z), default=True
+    local_finegrid: False                           # If True, after searching in zgrid, do a finer zgrid search around with higher resolution, default=False
+    local_finegrid_size: 0.03                       # If local_finegrid=True, fine-grid size in each direction from zbest, default=0.03
+    local_finegrid_dz: 0.001                        # Fine grid dz size, default=0.001
+    testing_zgrid: False                           # If True, ignore above setting and instead use the pre-defined hand-picked grid combined with local fine grid
+                                                    # This is suitable for testing, it has step sizes [0.002, 0.005, 0.01, 0.01, 0.01, 0.02]
+                                                    # at intervals [0, 0.1, 0.3, 0.5, 1, 1.5]
 
 Directory_locations:                                # All locations can be relative or absolute
     eazy_templates_location: EAZY_1p1_Spectra       # EAZY templates folder location
-    filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
+    filter_location: None                           # SPHEREx filters folder location, None if not using filters
+    # filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
     OUTPUT: OUTPUTS                                 # Output files directory       
 
 

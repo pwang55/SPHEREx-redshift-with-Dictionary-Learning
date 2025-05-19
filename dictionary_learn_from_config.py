@@ -12,7 +12,7 @@ import numpy as np
 # import pandas as pd
 import sys
 import time
-# from numba import jit, njit     # use numba to accelerate key functions in the algorithm (by roughly a factor of 3!)
+# from numba import jit, njit
 # from glob import glob
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -34,17 +34,15 @@ training_catalog = config['Catalog']['training_catalog']
 evaluation_catalog = config['Catalog']['evaluation_catalog']
 Ndat = config['Catalog']['Ndat_training']
 Ndat_evaluation = config['Catalog']['Ndat_evaluation']
-error_method = config['Catalog']['error_method']
 Ncalibrators = config['Catalog']['Ncalibrators']
+use_DESI_flag = config['Catalog']['use_DESI_flag']
 calibrator_SNR51 = config['Catalog']['calibrator_SNR']
 f_lambda_mode = config['Catalog']['f_lambda_mode']    # fitting in f_lambda or f_nu
-SNR = config['Catalog']['SNR']
-add_fluctuations = config['Catalog']['add_fluctuations']     # Add random fluctuations to fluxes based on error columns as gaussian
-flux_fluctuation_scaling = config['Catalog']['flux_fluctuation_scaling']
 
 # Dictionary input configurations
 dict_read_from_file = config['Dictionary']['read_from_file']
 add_constant = config['Dictionary']['add_constant']
+fix_dicts = config['Dictionary']['Fix_dicts']
 Ndict = config['Dictionary']['Ndict']
 num_EAZY_as_dict = config['Dictionary']['num_EAZY_as_dict']
 dicts_fluctuation_scaling_const = config['Dictionary']['dict_fluctuation_scaling_start']
@@ -59,91 +57,99 @@ fix_z = config['Algorithm']['fix_z']
 centering = config['Algorithm']['Centering']
 AB_update_tolerance = config['Algorithm']['AB_update_tolerance']
 max_AB_loops = config['Algorithm']['max_update_loops']            # if algorithm = 1, number of loops to run updates on dictionaries
-replace_old_ab_info = config['Algorithm']['replace_old_ab_info']
+remove_old_ab_info = config['Algorithm']['remove_old_ab_info']
+# residue_factor = config['Algorithm']['residue_factor']
+# AB_factor = config['Algorithm']['AB_factor']
 learning_rate0 = config['Algorithm']['learning_rate0']
 learning_rate_cali = config['Algorithm']['learning_rate_cali']
-lassolars = config['Algorithm']['LARSlasso']
-lars_alpha = config['Algorithm']['LARSlasso_alpha']
-lars_positive = config['Algorithm']['LARSlasso_positive']
-LARSlasso_alpha_scaling = config['Algorithm']['LARSlasso_alpha_scaling']
+
+# LARSlasso Configurations
+larslasso = config['LARSlasso']['LARSlasso']
+lars_alpha = config['LARSlasso']['alpha']
+LARSlasso_alpha_sigma = config['LARSlasso']['alpha_sigma']
+lars_positive = config['LARSlasso']['positive']
+# LARSlasso_alpha_selection_only = config['LARSlasso']['alpha_selection_only']
+# LARSlasso_alpha_scaling = config['LARSlasso']['alpha_scaling']
 
 # Fitting configurations
-probline = config['Fitting']['probline']
+# probline = config['Fitting']['probline']
 fit_training_catalog = config['Fitting']['fit_training_catalog']
-prov_z_Niterations = config['Fitting']['prov_z_Niterations']
-prov_z_cold_restart = config['Fitting']['prov_z_cold_restart']
 convolve_filters = config['Fitting']['convolve_filters']
-convolve_filter = convolve_filters[0] # choose to convolve templates with filter or not in the first stage of optimized grid search
-last_stage_convolve_filter = convolve_filters[1]   # whether to colvolve with filters in the last stage of grid search 
+# convolve_filter = convolve_filters[0] # choose to convolve templates with filter or not in the first stage of optimized grid search
+# last_stage_convolve_filter = convolve_filters[1]   # whether to colvolve with filters in the last stage of grid search 
 fitting_convolve_filter = convolve_filters[2] # Whether to convolve with filters in the end when fitting final redshifts
 
 # Zgrid configurations
-z_fitting_max = config['Zgrid']['z_fitting_max']
-zgrid_seps = config['Zgrid']['zgrid_separation']                # optimized zgrid setting and initialization
-zgrid_seps.append(z_fitting_max)
-zgrid_seps = np.array(zgrid_seps)
-zgrid_stepsizes = np.array(config['Zgrid']['zgrid_stepsizes'])  # This needs to be shorter than zgrid_seps by 1 element
-zgrid_searchsize = max(max(zgrid_stepsizes), config['Zgrid']['min_zgrid_searchsize'])  # search grid size to the left and right should be at least 0.02 but equal to the largest step size
-zgrid_errsearchsize = config['Zgrid']['zgrid_errsearchsize']
-zgrid = fx.generate_zgrid(zgrid_seps, zgrid_stepsizes, z_fitting_max)
+zmax = config['Zgrid']['zmax']
+zmin = config['Zgrid']['zmin']
+dz = config['Zgrid']['dz']
+scale_1plusz = config['Zgrid']['scale_1plusz']
+testing_zgrid = config['Zgrid']['testing_zgrid']
+
+zgrid = fx.generate_zgrid(zmin=zmin, zmax=zmax, dz=dz, scale_1plusz=scale_1plusz, testing_zgrid=testing_zgrid)
 
 # Directory locations
 eazy_templates_location = config['Directory_locations']['eazy_templates_location']
 filter_location = config['Directory_locations']['filter_location']
 output_dirname = config['Directory_locations']['OUTPUT']
 
-# TEMP
-fit_spectrum = fx.fit_spectrum
+# some common keywords for fit_zgrid function as dictionary
+fit_kws = fx.keywords(config_file)
+train_fit_kws = fit_kws.train_fit()
+validation_fit_kws = fit_kws.validation_fit()
+
+fit_zgrid = fx.fit_zgrid
 
 
-# Read input file and get all necessary information
-ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs = fx.read_file(training_catalog, Ndat=Ndat, centering=centering,
-                                    error_method=error_method, SNR=SNR, f_lambda_mode=f_lambda_mode,  
-                                    add_fluctuations=add_fluctuations, flux_fluctuation_scaling=flux_fluctuation_scaling)
+cat = fx.Catalog(pathfile=training_catalog, Ndat=Ndat, centering=centering)
+lamb_obs = cat.lamb_obs
+ztrue = cat.ztrue
+spec_obs = cat.spec_obs
+spec_obs_original = cat.spec_obs_original
+err_obs = cat.err_obs
+desi_flag = cat.desi_flag
+snr = cat.snr
 
-Ngal = len(ztrue)
+Ngal = len(cat.ztrue)
 if Ngal < Ndat:
     Ndat = Ngal
 
 # 51th channel SNR require for calibration galaxies
-snr_obs = spec_obs/err_obs
-h_cali = snr_obs[:,51] > calibrator_SNR51
 idx_original = np.arange(Ngal)  # index corresponding to read input
-idx_cali = idx_original[h_cali][:Ncalibrators] # index for calibration galaxies within read input
+if use_DESI_flag:
+    h_cali = desi_flag == 1.0
+    idx_cali = idx_original[h_cali]
+    Ncalibrators = np.sum(h_cali)
+else:
+    h_cali = cat.snr_i > calibrator_SNR51
+    idx_cali = idx_original[h_cali][:Ncalibrators] # index for calibration galaxies within read input
+
+# Find indices for plotting final fitted SED
+snr_max = np.max(snr, axis=1)
+qs = [99.9, 95, 85, 75, 55, 15] # target SNR percentile for example SEDs
+idx_plot_sed = []
+for i in range(len(qs)):
+    snr_target = np.percentile(snr_max, qs[i])
+    idx_target = np.argmin(np.abs(snr_max - snr_target))
+    idx_plot_sed.append(idx_target)
 
 # Make sure directory strings have "/" at the end; if output directory doesn't exist, create one
-if len(output_dirname) > 0 and output_dirname[-1] != '/':
-    output_dirname = output_dirname + '/'
+if len(output_dirname) > 0:
+    output_dirname = output_dirname.rstrip('/') + '/'
 output_dir = Path(output_dirname)
 if len(output_dirname) > 0 and not output_dir.is_dir():
     output_dir.mkdir()
-if eazy_templates_location[-1] != '/':
-    eazy_templates_location = eazy_templates_location + '/'
-if filter_location[-1] != '/':
-    filter_location = filter_location + '/'
-filter_infos = fx.read_filters(filter_location)
-
-
-
-# add a tiny number to z=0.0 to get around zinput issue at z=0.0
-for i in range(len(ztrue)):
-    if ztrue[i][0] == 0.0:
-        # print('hhh')
-        ztrue[i][0] = 0.00000001
-
-
-# For saving files, if using error_method=0, change SNR to a string for filenames
-# but if input file doesn't have error column, switch to method 1 and use input SNR
-# Not really maintained nor used
-if error_method == 0:
-    try:
-        np.load(training_catalog)['error']
-        print(f"Error method: Original")
-        SNR = 'dat'
-    except:
-        print(f"Error column not found, switch to Error method 1 (SNR={SNR})")
+eazy_templates_location = eazy_templates_location.rstrip('/') + '/'
+if filter_location != 'None':
+    filter_info = fx.read_filters(filter_location)
 else:
-    print(f"Error method: {error_method} (SNR={SNR})")
+    filter_info = None
+
+
+# add a tiny number to z=0.0 so that if zinput is given as 0 it will not be considered False
+for i in range(len(ztrue)):
+    if ztrue[i] == 0.0:
+        ztrue[i] = 0.00000001
 
 
 # preparing to initialize dictionaries with lamb_rest and EAZY templates
@@ -187,8 +193,8 @@ if not dict_read_from_file:
     dictionary_fluctuation_scaling = np.array([dicts_fluctuation_scaling_const/(dict_fluctuation_scaling_base**i) for i in range(Ndict-num_EAZY_as_dict)])
     D_rest = fx.initialize_dicts(Ndict, dictionary_fluctuation_scaling=dictionary_fluctuation_scaling, templates_EAZY=templates_EAZY, 
                              num_EAZY_as_dict=num_EAZY_as_dict, lamb_rest=lamb_rest)
-D_rest_initial = D_rest.copy()
 
+D_rest_initial = D_rest.copy()
 
 
 tic = time.time()
@@ -205,32 +211,40 @@ if __name__ == "__main__":
     # print(f"Algorithm = {algorithm}")
     print(f"Training Catalog:\t{training_catalog} ({Ngal} sources)")
     print(f"Evaluation Catalog:\t{evaluation_catalog} ({Ngal_evaluation} sources)")
+    if dict_read_from_file:
+        print(f"Dictionaries:\t\t{dict_read_from_file}")
+    else:
+        print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")    
+    print('')
     print(f"Ndict = {Ndict}")
     print(f"Add constant dictionary: {add_constant}")
-    print(f"Ncalibrators = {Ncalibrators} (SNR > {calibrator_SNR51})")
+    if fix_dicts > 0:
+        print(f"Fix {fix_dicts} dictionaries from the end of list")
+    print(f"Centering: {centering}")    
+    print('')
     print(f"Fix z in training: {fix_z}")
-    # print(f"Non-negative Matrix Factorization: {NMF}")
+    if use_DESI_flag:
+        print(f"Ncalibrators = {Ncalibrators} (DESI Flags)")
+    elif Ncalibrators>0:
+        print(f"Ncalibrators = {Ncalibrators} (SNR > {calibrator_SNR51})")
     # print(f"Convolving filters: 1st stage:{convolve_filter}, 2nd stage:{last_stage_convolve_filter}, fitting:{fitting_convolve_filter}")
     if algorithm == 0:
         print(f"Learning rates = {learning_rate0}/{learning_rate_cali}")
     else:
-        if lassolars:
-            print(f"LassoLars: {lassolars} (alpha={lars_alpha}, Positive: {lars_positive})")
+        if larslasso:
+            print(fr"LARSlasso: {larslasso} (alpha={lars_alpha} + {LARSlasso_alpha_sigma}sigma, Positive: {lars_positive})")
         else:
-            print(f"LassoLars: {lassolars}")
-        print(f"Centering: {centering}")
-        print(f"Replace old AB info: {replace_old_ab_info}")
-    if dict_read_from_file:
-        print(f"Dictionaries:\t{dict_read_from_file}")
-    else:
-        print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")
+            print(f"LARSlasso: {larslasso}")
+        print(f"Remove old AB info: {remove_old_ab_info}")
 
+    if testing_zgrid:
+        print('Testing Zgrid: On')
 
     # Initialize A and B matrices for dictionary updates
     A = np.zeros((D_rest.shape[0], D_rest.shape[0]))
     B = np.zeros((len(lamb_rest), D_rest.shape[0]))
 
-    if replace_old_ab_info: # save previous A and B for later removal
+    if remove_old_ab_info: # save previous A and B for later removal
         A_history = np.zeros((Ngal, D_rest.shape[0], D_rest.shape[0]))
         B_history = np.zeros((Ngal, len(lamb_rest), D_rest.shape[0]))
 
@@ -247,33 +261,31 @@ if __name__ == "__main__":
         for i_gal0 in range(Ngal): 
             i_gal = idx_shuffle[i_gal0]
             # update with number of galaxies processed
-            # if np.mod(i_gal0,100) == 0:
-                # print(f"\r\t{i_gal0}/{Ngal} spectra", end="")
-            print(f"\r\t{i_gal0}/{Ngal} spectra", end="")   # TEMP
-            # print(i_gal)
+            print(f"\r\t{i_gal0+1}/{Ngal} spectra", end="")
             # if this is a calibrator galaxy
-            # if i_gal in i_calibrator_galaxies or fix_z:
             if i_gal in idx_cali or fix_z:
                 # use the known redshift
-                zinput = ztrue[i_gal][0]
+                zinput = ztrue[i_gal]
             else:
                 # otherwise perform a best-fit for the redshift
                 zinput = False
 
             # fit this spectrum and obtain the redshift
-            z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                    zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                    zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter, error=False)
+            z,zlow,zhigh,coefs,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i_gal], err_obs[i_gal], lamb_D=lamb_rest, D_rest=D_rest, zinput=zinput, 
+                                                                      zgrid=zgrid, filter_info=filter_info, **train_fit_kws)
 
             # update the spectral dictionary using the residuals between the model and data
-            residual = spec_obs[i_gal,:] - model
+            residual = spec_obs[i_gal] - model
             j_update = np.where((lamb_rest > np.min(lamb_obs)/(1+z)) & (lamb_rest < np.max(lamb_obs)/(1+z)))[0]     # Find overlap between this spectra in rest-frame and dictionary
             interpolated_residual = np.interp(lamb_rest[j_update], lamb_obs/(1+z), residual)                          # interpolate the residual to these values
-            interpolated_spec_obs = np.interp(lamb_rest[j_update], lamb_obs/(1+z), spec_obs[i_gal,:])
-            model_rest = ((D_rest).T @ params).reshape(len(lamb_rest))                                              # construct the model from best fit coefficients and dictionaries
+            interpolated_spec_obs = np.interp(lamb_rest[j_update], lamb_obs/(1+z), spec_obs[i_gal])
+            model_rest = (D_rest).T @ coefs                                             # construct the model from best fit coefficients and dictionaries
             model_rest[j_update] = interpolated_spec_obs                                                            # replace the overlapped part with interpolated observed spectra 
-                                                                                                                    # this will be considered the observed spectra for update purpose; outside overlap range just use model (no update)
+                                                                                                                      # this will be considered the observed spectra for update purpose; outside overlap range just use model (no update)
+            # TESTING
+            # error_rest = np.ones_like(model_rest)
+            # error_rest = np.interp(lamb_rest, lamb_obs/(1+z), err_obs[i_gal])
+            # residue_factor = 1/error_rest * min(error_rest)
 
             # update each item in the dictionary (do not modify the DC offset term at the end)
             if algorithm == 0:  # pseudo-inverse vector method
@@ -283,159 +295,61 @@ if __name__ == "__main__":
                 if i_gal in idx_cali:
                     # use a higher learning rate since we know the redshift is correct
                     learning_rate = learning_rate_cali
-                for i in range(D_rest.shape[0]-add_constant):
-                    update_factor = learning_rate * (params[i]/(np.sum(params**2)))
+                for i in range(D_rest.shape[0]-add_constant-fix_dicts):
+                    update_factor = learning_rate * (coefs[i]/(np.sum(coefs**2)))
                     D_rest[i,j_update] = D_rest[i,j_update] + update_factor * interpolated_residual
 
-            elif algorithm == 1:    # paper method with A and B matrices
+            elif algorithm == 1:    # block-coordinate descent
                 # update A and B
-                if replace_old_ab_info:
+                if remove_old_ab_info:
+                    # TESTING
                     A -= A_history[i_gal]
                     B -= B_history[i_gal]
-                    A_history[i_gal] = params @ params.T
-                    B_history[i_gal] = model_rest.reshape((len(model_rest),1)) @ params.T
+                    A_history[i_gal] = coefs[:,None] @ coefs[:,None].T
+                    # A_history[i_gal] = coefs[:,None] @ coefs[:,None].T * AB_factor
+                    # B_history[i_gal] = model_rest[:,None] @ coefs[:,None].T * residue_factor * AB_factor
+                    B_history[i_gal] = model_rest[:,None] @ coefs[:,None].T
+                    # B_history[i_gal] = model_rest[:,None] @ coefs[:,None].T * AB_factor
                     A += A_history[i_gal]
                     B += B_history[i_gal]
                 else:
-                    A += params @ params.T
-                    B += model_rest.reshape((len(model_rest),1)) @ params.T
+                    A += coefs[:,None] @ coefs[:,None].T
+                    # A += coefs[:,None] @ coefs[:,None].T * AB_factor
+                    B += model_rest.reshape((len(model_rest),1)) @ coefs[:,None].T
+                    # TESTING 
+                    # B += model_rest[:,None] @ coefs[:,None].T * residue_factor * AB_factor
 
                 # iterative over A and B matrices until converge or max_AB_loop
-                for j in range(D_rest.shape[0]-add_constant):
+                for j in range(D_rest.shape[0]-add_constant-fix_dicts):
                     score = 1.0
                     Dj_old = D_rest[j].copy()
                     abi = 0
                     while score >= AB_update_tolerance and abi < max_AB_loops:
-                        # print(np.diagonal(A))
                         diag_Aj = np.diagonal(A)[j]
-                        if diag_Aj == 0:
-                            diag_Aj = 1e-10 # Avoid NaN
-                        uj = 1/diag_Aj * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
-                        uj_norm = np.linalg.norm(uj)
-                        D_rest[j] = uj/max(1, uj_norm)
-                        score = np.linalg.norm(D_rest[j]-Dj_old)/np.linalg.norm(Dj_old)
-                        abi += 1
-
-    # If requiring provisional z iteration, fit every training set with learned dictionaries, then used fitted redshift as "true" redshift to learn again
-    if prov_z_Niterations > 0:
-        print('\nProvisional Redshift Estimation with fixed fitted redshift:')
-        zbest_provisional = np.zeros(Ngal)
-        for i in range(Ngal):
-            # update with number of galaxies processed
-            # if np.mod(i,100)==0:
-                # print('    '+str(i)+' of '+str(Ngal)+' spectra')
-                # print(f"\r\t{i}/{Ngal} spectra", end="")
-            print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
-            # fit this spectrum and obtain the redshift
-            z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                        zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                        zinput=False, conv_first=convolve_filter, conv_last=last_stage_convolve_filter)
-            # store the redshift
-            zbest_provisional[i] = z
-
-        # iterate again
-        if prov_z_cold_restart:
-            D_rest = D_rest_initial.copy()  # Reset the dictionaries to initial if cold restart
-            A = np.zeros((D_rest.shape[0], D_rest.shape[0]))
-            B = np.zeros((len(lamb_rest), D_rest.shape[0]))
-            if replace_old_ab_info:
-                A_history = np.zeros((Ngal, D_rest.shape[0], D_rest.shape[0]))
-                B_history = np.zeros((Ngal, len(lamb_rest), D_rest.shape[0]))
-
-        for i_iter in range(prov_z_Niterations):
-            idx_shuffle = idx_original.copy()
-            np.random.shuffle(idx_shuffle)
-            print(f"{i_iter+1} of {prov_z_Niterations} re-iterations")
-            for i_gal0 in np.arange(Ngal):
-                i_gal = idx_shuffle[i_gal0]
-                zinput = zbest_provisional[i_gal]
-                if fix_z:
-                    zinput = ztrue[i_gal][0]
-
-                # fit this spectrum and obtain the redshift
-                z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i_gal,:], err_obs[i_gal,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                        zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                        zinput=zinput, conv_first=convolve_filter, conv_last=last_stage_convolve_filter)
-                
-
-                # update the spectral dictionary using the residuals between the model and data
-                residual = spec_obs[i_gal,:] - model
-                j_update = np.where((lamb_rest > np.min(lamb_obs)/(1+z)) & (lamb_rest < np.max(lamb_obs)/(1+z)))[0]
-                # interpolate the residual to these values
-                interpolated_residual = np.interp(lamb_rest[j_update], lamb_obs/(1+z), residual)
-                interpolated_spec_obs = np.interp(lamb_rest[j_update], lamb_obs/(1+z), spec_obs[i_gal,:])
-                model_rest = ((D_rest).T @ params).reshape(len(lamb_rest))
-                model_rest[j_update] = interpolated_spec_obs
-
-                # update each item in the dictionary (do not modify the DC offset term at the end)
-                if algorithm == 0:  # pseudo-inverse vector method
-                    # set the learning rate
-                    learning_rate = learning_rate0
-                    for i in range(D_rest.shape[0]-add_constant):
-                        update_factor = learning_rate*(params[i]/(np.sum(params**2)))
-                        D_rest[i,j_update] = D_rest[i,j_update] + update_factor * interpolated_residual
-                elif algorithm == 1:    # paper method with A and B matrices
-                    # update A and B
-                    if replace_old_ab_info:
-                        A -= A_history[i_gal]
-                        B -= B_history[i_gal]
-                        A_history[i_gal] = params @ params.T
-                        B_history[i_gal] = model_rest.reshape((len(model_rest),1)) @ params.T
-                        A += A_history[i_gal]
-                        B += B_history[i_gal]
-                    else:
-                        A += params @ params.T
-                        B += model_rest.reshape((len(model_rest),1)) @ params.T
-
-                    # iterative over A and B matrices until converge or max_AB_loop
-                    for j in range(D_rest.shape[0]-add_constant):
-                        score = 1.0
-                        Dj_old = D_rest[j].copy()
-                        abi = 0
-                        while score >= AB_update_tolerance and abi < max_AB_loops:
-                            uj = 1/np.diagonal(A)[j] * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
+                        if diag_Aj != 0:
+                            uj = 1/diag_Aj * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
+                            # TESTING
+                            # uj = 1/diag_Aj * (B[:,j] - ((D_rest*residue_factor).T @ A[j])) + D_rest[j]
                             uj_norm = np.linalg.norm(uj)
                             D_rest[j] = uj/max(1, uj_norm)
                             score = np.linalg.norm(D_rest[j]-Dj_old)/np.linalg.norm(Dj_old)
                             abi += 1
-        
-    # plot results
-    plt.ion()
-    plt.figure(1)
-    plt.clf()
+                        else:
+                            break
+                        
 
-    # Create template plots and save learned template
-    plt.plot(lamb_rest,D_rest[:-1].transpose(),'-', alpha=0.8)
-    plt.plot(np.nan,np.nan,'k-',label='Trained Template')
-    plt.xlabel('Wavelength [um]')
-    plt.ylabel('Flux [arb]')
-    plt.title('Estimating Redshift Templates from Data')
-    plt.legend()
-    plt.grid('on')
-    plt.tight_layout()
-    plt.savefig(output_dirname+'trained_template.png',dpi=600)
-    np.savez_compressed(output_dirname+'trained_template.npz',lamb_rest=lamb_rest,D_rest=D_rest)
-    # np.savez_compressed(output_dirname+'initial_template.npz',lamb_rest=lamb_rest,D_rest=D_rest_initial)
+    np.savez_compressed(output_dirname+'trained_templates.npz',lamb_rest=lamb_rest, D_rest=D_rest)
 
-    templates_figsize = (12,10)
-    tick_fontsize = 6
+    # Make template plots and multiplots
+    makefigs = fx.diagnostic_plots(output_dirname=output_dirname)
+    makefigs.template_plots(lamb_rest=lamb_rest, D_rest=D_rest[:Ndict], D_rest_initial=D_rest_initial[:Ndict])
 
-    fig, axs = plt.subplots(Ndict, 2, figsize=templates_figsize, num=0)
-    for i in range(Ndict):
-        axs[i,0].plot(lamb_rest, D_rest_initial[i], alpha=0.8, linewidth=1)
-        axs[i,0].plot(lamb_rest, D_rest[i], alpha=0.8, linewidth=1)
-        axs[i,1].plot(lamb_rest, D_rest[i]-D_rest_initial[i], linewidth=1)
-        axs[i,0].tick_params(axis='both', which='major', labelsize=tick_fontsize)
-        axs[i,1].tick_params(axis='both', which='major', labelsize=tick_fontsize)
 
-    axs[0,0].set_title('Initial/Trained Dictionaries')
-    axs[0,1].set_title('Trained-Initial')
-    fig.supxlabel('Wavelength [um]')
-    # fig.supylabel()
-    fig.tight_layout()
-    plt.savefig(output_dirname+f'trained_template_multiplot.png',dpi=600)
+    # pre-redshift D_rest into all redshift in zgrid
+    D_allz = fx.apply_redshift_all(D_rest, zgrid=zgrid, lamb_in=lamb_rest, lamb_out=lamb_obs, 
+                                    filter_info=filter_info, conv=fitting_convolve_filter)
+    D_allz_initial = fx.apply_redshift_all(D_rest_initial, zgrid=zgrid, lamb_in=lamb_rest, lamb_out=lamb_obs, 
+                                    filter_info=filter_info, conv=fitting_convolve_filter)
 
     # Fitting training catalog if set to True
     if fit_training_catalog:
@@ -444,103 +358,46 @@ if __name__ == "__main__":
         zbest_trained = np.zeros(Ngal)
         zlow_trained = np.zeros(Ngal)
         zhigh_trained = np.zeros(Ngal)
-        params_trained = np.zeros((Ngal, D_rest.shape[0], 1))
+        coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
+
 
         for i in range(Ngal):
             # update with number of galaxies processed
-            # if np.mod(i,100)==0:
-                # print(f"\r\t{i}/{Ngal} spectra", end="")
-            print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
+            print(f"\r\t{i+1}/{Ngal} spectra", end="")
             # fit this spectrum and obtain the redshift
             zinput = False
-            z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling,
-                                                        zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                        zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
+            z,zlow,zhigh,coefs,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
+                                                    zgrid=zgrid, filter_info=filter_info, **validation_fit_kws)
             # store the redshift
             zbest_trained[i] = z
             zlow_trained[i] = zlow
             zhigh_trained[i] = zhigh
-            params_trained[i] = params
+            coefs_trained[i] = coefs
 
         # for comparison, fit again with original template
-        # turn off this part
         zbest_initial = np.zeros(Ngal)
         print('\nTraining Catalog Untrained Redshift Estimation')
         for i in range(Ngal):
-            # if np.mod(i,100)==0:
-                # print(f"\r\t{i}/{Ngal} spectra", end="")
-            print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
+            print(f"\r\t{i+1}/{Ngal} spectra", end="")
             # fit this spectrum and obtain the redshift
             zinput = False
-            z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                        filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling,
-                                                        zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                        zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
+            z_bi,zlow_bi,zhigh_bi,coefs_bi,model_bi,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest_initial,
+                                                D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filter_info=filter_info, **validation_fit_kws)
             zbest_initial[i] = z_bi
 
-        # correct dimsionality of ztrue
-        ztrue = ztrue.flatten()
+        makefigs.zp_zs_plots(ztrue=ztrue, zbest_initial=zbest_initial, zbest_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='training')
 
-        # find % of catastrophic error and accuracy
-        dz_initial = zbest_initial - ztrue
-        eta_initial = np.mean(np.abs(dz_initial/(1+ztrue)) > 0.15) * 100
-        dz_trained = zbest_trained - ztrue
-        eta_trained = np.mean(np.abs(dz_trained/(1+ztrue)) > 0.15) * 100
 
-        # NMAD
-        nmad_initial = 1.48 * np.median(np.abs((dz_initial - np.median(dz_initial))/(1+ztrue)))
-        nmad_trained = 1.48 * np.median(np.abs((dz_trained - np.median(dz_trained))/(1+ztrue)))
 
-        # plot redshift reconstruction
-        zpzs_figsize = (10,10)
-        fig1, axs1 = plt.subplots(2,1, figsize=zpzs_figsize, num=1, gridspec_kw={'height_ratios': [3,1]})
-        lim_offset = 0.05
-        axs1[0].set_xlim(0-lim_offset, z_fitting_max+lim_offset)
-        axs1[0].set_ylim(0-lim_offset, z_fitting_max+lim_offset)
-        axs1[1].set_ylim(-0.25,0.25)
-        axs1[1].set_xlim(0-lim_offset, z_fitting_max+lim_offset)
-        axs1[0].grid()
-        axs1[1].grid()
-
-        labelfontsize = 18
-        tickfontsize = 12
-        legendfontsize = 14
-        m0 = 'o'
-        m1 = 'o'
-        m0size = 4
-        m1size = 4
-        markeredgewidth = 0.2
-        # m0edgec = 'tab:blue'
-        # m1edgec = 'tab:orange'
-        m0edgec = 'k'
-        m1edgec = 'k'
-
-        axs1[0].set_ylabel('Estimated Redshift', fontsize=labelfontsize)
-        axs1[1].set_xlabel('True Redshift', fontsize=labelfontsize)
-        axs1[1].set_ylabel(r'$\Delta z/(1+z_{True})$', fontsize=labelfontsize)
-        axs1[0].plot(ztrue, zbest_initial, m0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth, alpha=0.65,
-                    label=f'Initial, $\eta={eta_initial:.3f}$%, $\sigma_{{NMAD}}={100*nmad_initial:.3f}$%')
-        axs1[0].plot(ztrue, zbest_trained, m1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth, alpha=0.8,
-                    label=f'Trained, $\eta={eta_trained:.3f}$%, $\sigma_{{NMAD}}={100*nmad_trained:.3f}$%')
-        axs1[0].plot([0-lim_offset,z_fitting_max+lim_offset],[0-lim_offset,z_fitting_max+lim_offset],'-',alpha=0.8, color='g', linewidth=2)
-        axs1[1].plot(ztrue, (zbest_initial-ztrue)/(1+ztrue), m0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth, alpha=0.65)
-        axs1[1].plot(ztrue, (zbest_trained-ztrue)/(1+ztrue), m1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth, alpha=0.8)
-        axs1[1].plot([0-lim_offset,z_fitting_max+lim_offset],[0,0],'-',alpha=0.8, color='g', linewidth=2)
-        axs1[0].tick_params(axis='both', which='major', labelsize=tickfontsize)
-        axs1[1].tick_params(axis='both', which='major', labelsize=tickfontsize)
-        axs1[0].legend(fontsize=legendfontsize, framealpha=0.9, loc='upper left')
-        # axs[1].legend(fontsize=20, loc='lower right')
-        fig1.suptitle('Training Catalog Redshift Estimation')
-        fig1.tight_layout()
-        plt.savefig(output_dirname+f'redshift_estimation_performance_training_catalog.png',dpi=600)
-        # plt.savefig(output_dirname+'redshift_estimation_performance.png',dpi=600)
-
-    # Fitting on fitting_catalog
-    # Read the fitting catalog first
-    ztrue, lamb_obs, spec_obs, spec_obs_original, err_obs = fx.read_file(evaluation_catalog, Ndat=Ndat_evaluation, centering=centering,
-                                    error_method=error_method, SNR=SNR, f_lambda_mode=f_lambda_mode, 
-                                    add_fluctuations=add_fluctuations, flux_fluctuation_scaling=flux_fluctuation_scaling)
+    # Read evaluation catalog for final fitting
+    cat = fx.Catalog(pathfile=evaluation_catalog, Ndat=Ndat_evaluation, centering=centering)
+    lamb_obs = cat.lamb_obs
+    ztrue = cat.ztrue
+    spec_obs = cat.spec_obs
+    spec_obs_original = cat.spec_obs_original
+    err_obs = cat.err_obs
+    desi_flag = cat.desi_flag
+    snr = cat.snr_i
 
     Ngal = len(ztrue)
 
@@ -548,199 +405,62 @@ if __name__ == "__main__":
     zbest_trained = np.zeros(Ngal)
     zlow_trained = np.zeros(Ngal)
     zhigh_trained = np.zeros(Ngal)
-    params_trained = np.zeros((Ngal, D_rest.shape[0], 1))
+    coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
+
 
     for i in range(Ngal):
-        # update with number of galaxies processed
-        # if np.mod(i,100)==0:
-            # print(f"\r\t{i}/{Ngal} spectra", end="")
-        print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
+        print(f"\r\t{i+1}/{Ngal} spectra", end="")
 
-        # fit this spectrum and obtain the redshift
         zinput = False
-        z,zlow,zhigh,params,model,ztrials,residues = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                    zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                    zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
+        z,zlow,zhigh,coefs,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
+                                                    zgrid=zgrid, filter_info=filter_info, **validation_fit_kws)
         # store the redshift
         zbest_trained[i] = z
         zlow_trained[i] = zlow
         zhigh_trained[i] = zhigh
-        params_trained[i] = params
+        coefs_trained[i] = coefs
 
     # for comparison, fit again with original template
-    # turn off this part
     zbest_initial = np.zeros(Ngal)
     zlow_initial = np.zeros(Ngal)
     zhigh_initial = np.zeros(Ngal)
     print('\nFitting Catalog Untrained Redshift Estimation')
 
     for i in range(Ngal):
-        # update with number of galaxies processed
-        # if np.mod(i,100)==0:
-            # print(f"\r\t{i}/{Ngal} spectra", end="")
-        print(f"\r\t{i}/{Ngal} spectra", end="")    # TEMP
-        # fit this spectrum and obtain the redshift
+        print(f"\r\t{i+1}/{Ngal} spectra", end="")
+
         zinput = False
-        z_bi,zlow_bi,zhigh_bi,params_bi,model_bi,ztrials_bi,residues_bi = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                    zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                    zinput=zinput, conv_first=convolve_filter, conv_last=fitting_convolve_filter, error=True)
+        z_bi,zlow_bi,zhigh_bi,coefs_bi,model_bi,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest_initial,
+                                                D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filter_info=filter_info, **validation_fit_kws)
         # store the redshift
         zbest_initial[i] = z_bi
         zlow_initial[i] = zlow_bi
         zhigh_initial[i] = zhigh_bi
 
+    makefigs.zp_zs_plots(ztrue=ztrue, zbest_initial=zbest_initial, zbest_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='fitting')
 
-    # correct dimsionality of ztrue
-    ztrue = ztrue.flatten()
-
-    # find % of catastrophic error and accuracy
-    dz_initial = zbest_initial - ztrue
-    eta_initial = np.mean(np.abs(dz_initial/(1+ztrue)) > 0.15) * 100
-    dz_trained = zbest_trained - ztrue
-    eta_trained = np.mean(np.abs(dz_trained/(1+ztrue)) > 0.15) * 100
-
-    # NMAD
-    nmad_initial = 1.48 * np.median(np.abs((dz_initial - np.median(dz_initial))/(1+ztrue)))
-    nmad_trained = 1.48 * np.median(np.abs((dz_trained - np.median(dz_trained))/(1+ztrue)))
-
-
-    # plot redshift reconstruction
-    zpzs_figsize = (10,10)
-    fig2, axs2 = plt.subplots(2,1, figsize=zpzs_figsize, num=2, gridspec_kw={'height_ratios': [3,1]})
-    lim_offset = 0.05
-    axs2[0].set_xlim(0-lim_offset,z_fitting_max+lim_offset)
-    axs2[0].set_ylim(0-lim_offset,z_fitting_max+lim_offset)
-    axs2[1].set_ylim(-0.25,0.25)
-    axs2[1].set_xlim(0-lim_offset,z_fitting_max+lim_offset)
-    axs2[0].grid()
-    axs2[1].grid()
-
-    labelfontsize = 18
-    tickfontsize = 12
-    legendfontsize = 14
-    m0 = 'o'
-    m1 = 'o'
-    m0size = 4
-    m1size = 4
-    markeredgewidth = 0.2
-    # m0edgec = 'tab:blue'
-    # m1edgec = 'tab:orange'
-    m0edgec = 'k'
-    m1edgec = 'k'
-
-    axs2[0].set_ylabel('Estimated Redshift', fontsize=labelfontsize)
-    axs2[1].set_xlabel('True Redshift', fontsize=labelfontsize)
-    axs2[1].set_ylabel(r'$\Delta z/(1+z_{True})$', fontsize=labelfontsize)
-    axs2[0].plot(ztrue, zbest_initial, m0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth, alpha=0.65,
-                label=f'Initial, $\eta={eta_initial:.3f}$%, $\sigma_{{NMAD}}={100*nmad_initial:.3f}$%')
-    axs2[0].plot(ztrue, zbest_trained, m1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth, alpha=0.8,
-                label=f'Trained, $\eta={eta_trained:.3f}$%, $\sigma_{{NMAD}}={100*nmad_trained:.3f}$%')
-    axs2[0].plot([0-lim_offset,z_fitting_max+lim_offset],[0-lim_offset,z_fitting_max+lim_offset],'-',alpha=0.8, color='g', linewidth=2)
-    axs2[1].plot(ztrue, (zbest_initial-ztrue)/(1+ztrue), m0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth, alpha=0.65)
-    axs2[1].plot(ztrue, (zbest_trained-ztrue)/(1+ztrue), m1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth, alpha=0.8)
-    axs2[1].plot([0-lim_offset,z_fitting_max+lim_offset],[0,0],'-',alpha=0.8, color='g', linewidth=2)
-    axs2[0].tick_params(axis='both', which='major', labelsize=tickfontsize)
-    axs2[1].tick_params(axis='both', which='major', labelsize=tickfontsize)
-    axs2[0].legend(fontsize=legendfontsize, framealpha=0.9, loc='upper left')
-    # axs[1].legend(fontsize=20, loc='lower right')
-    fig2.suptitle('Fitting Catalog Redshift Estimation')
-    fig2.tight_layout()
-    plt.savefig(output_dirname+f'redshift_estimation_performance_fitting_catalog.png',dpi=600)
-
+    makefigs.uncertainty_binplots(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
+                                   zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial)
+    makefigs.hexbin_binplot(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
+                                   zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial)
 
     # save estimated redshifts
     np.savez_compressed(output_dirname+'estimated_redshifts.npz', ztrue=ztrue, zest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
-             zest_initial=zbest_initial, zlow_initial=zlow_initial, zhigh_initial=zhigh_initial, params=params_trained, idx_cali=idx_cali)
+             zest_initial=zbest_initial, zlow_initial=zlow_initial, zhigh_initial=zhigh_initial, coefs=coefs_trained, idx_cali=idx_cali)
 
     # Sparsity plot
-    if lassolars:
-        fig, ax = plt.subplots(figsize=(8,6), num=3)
-        p = params_trained.reshape((Ngal, Ndict+add_constant))
-        param_zeros = np.zeros(Ndict+1, dtype=int)
-        for i in range(Ngal):
-            p1 = p[i]
-            num_zeros = np.sum(p1==0)
-            param_zeros[num_zeros] += 1
-        ax.bar(np.arange(Ndict+1), param_zeros)
-        ax.set_title('Number of zeros in coefficients')
-        fig.tight_layout()
-        plt.savefig(output_dirname+'sparsity_bars.png')
-
-    # for comparison, fit a single spectrum with the initial and trained template
-    # select galaxy
-    i = 67
-    # i = 15
-    # refit with the initial dictionary
-    zbest_initial_ex,zlow_initial,zhigh_initial,params_initial,best_model_initial,ztrials_initial,residues_initial = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest_initial, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                    zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                    zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter)
-    # refit with the trained dictionary
-    zbest_trained_ex,zlow_trained,zhigh_trained,params_trained,best_model,ztrials_best,residues_best = fit_spectrum(lamb_obs, spec_obs[i,:], err_obs[i,:], lamb_rest, D_rest, zgrid=zgrid, 
-                                                    filter_infos=filter_infos, lassolars=lassolars, alpha=lars_alpha, lars_positive=lars_positive, alpha_ns_scaling=LARSlasso_alpha_scaling, 
-                                                    zgrid_searchsize=zgrid_searchsize, zgrid_errsearchsize=zgrid_errsearchsize, z_fitting_max=z_fitting_max, probline=probline,
-                                                    zinput=False, conv_first=convolve_filter, conv_last=fitting_convolve_filter)
-        
-    # plot single fitted spectrum
-    plt.figure(num=4)
-    plt.clf()
-    plt.errorbar(lamb_obs, spec_obs[i,:], err_obs[i,:], fmt='o', markersize=3, markerfacecolor='none', markeredgecolor='cadetblue', markeredgewidth=0.5, capsize=2, elinewidth=0.5, alpha=0.6, label="Photometry")
-    plt.plot(lamb_obs, spec_obs_original[i,:], '.', color='green', markersize=3, alpha=0.7, label="Ground Truth")
-    plt.plot(lamb_obs, best_model_initial, '-', linewidth=1.5, alpha=0.6, color='k', label=fr"Initial Template, $z_{{est}}$={zbest_initial_ex:.4}")
-    plt.plot(lamb_obs, best_model, linewidth=1, color='salmon', alpha=0.9, label=fr"Trained Template, $z_{{est}}$={zbest_trained_ex:.4}")
-    plt.xlabel('Observed Wavelength [$\mu$m]', fontsize=10)
-    plt.ylabel('Flux [mJy]', fontsize=10)
-    plt.title(fr"Idx={i}, $z_{{true}}$={ztrue[i]:.5f}", fontsize=10)
-    plt.legend(fontsize=10)
-    plt.grid('on')
-    plt.tight_layout()
-    plt.savefig(output_dirname+'single_spectrum_fitting.png',dpi=600)
+    if larslasso:
+        makefigs.sparsity_report(coefs_trained=coefs_trained)
 
 
-    # compare learned template with input template
-    # create main wavelength array
-    lamb_um = np.arange(0.3,4.8,lamb_rest_resolution)
-    h_lamb_um = (lamb_rest>=0.29999) & (lamb_rest<4.8)
-    templates_EAZY = templates_EAZY[:,h_lamb_um]
 
-    D_rest_interpolated_list = []
-    for i in range(D_rest.shape[0]):
-        D_rest_interpolated_list.append(np.interp(lamb_um,lamb_rest,D_rest[i,:]))
-    D_rest_interpolated = np.vstack(tuple(D_rest_interpolated_list))
+    makefigs.example_seds(cat=cat, lamb_rest=lamb_rest, D_rest=D_rest, D_rest_initial=D_rest_initial, \
+                          zgrid=zgrid, filter_info=filter_info, validation_fit_kws=validation_fit_kws)
 
-    plt.figure(num=5, figsize=templates_figsize)
-    for i in range(7):
-        # reconstruct this ground-truth template item with the learned template
-        # params =  inv(D*D')*D*s'
-        params = np.matmul(np.matmul(np.linalg.inv(np.matmul(D_rest_interpolated,D_rest_interpolated.transpose())),D_rest_interpolated),templates_EAZY[i,:])
+    # fit EAZY with trained dictionaries
+    # makefigs.fit_eazy_plots(lamb_rest, D_rest, templates_EAZY)
 
-        # evaluate model
-        this_model = np.zeros_like(lamb_um)
-        for j in range(D_rest.shape[0]):
-            this_model += params[j]*D_rest_interpolated[j,:]
-        
-        # make a plot
-        plt.subplot(7,1,i+1)
-        plt.plot(lamb_um,templates_EAZY[i,:],'.',label='Ground-Truth')
-        plt.plot(lamb_um,this_model,label='Learned')
-        plt.ylabel('T'+str(i))
-        plt.grid('on')
-        plt.xticks(fontsize=tick_fontsize)
-        plt.yticks(fontsize=tick_fontsize)
-        ax=plt.gca()
-        ax.yaxis.get_offset_text().set_size(tick_fontsize)
-
-    plt.xlabel('[um]')
-    plt.subplot(7,1,1)
-    plt.title('Reconstructing Ground-Truth Template with Learned Template')
-    plt.tight_layout()
-    plt.legend()
-    plt.savefig(output_dirname+'reconstructing_ground_truth_template.png',dpi=600)
 
     print('\nElapsed Time = '+str(time.time()-tic)+' seconds')
 
-    # np.savez_compressed(output_dirname+'fluctuated_input_cat.npz', z=ztrue.reshape(Ngal,1), wavelengths=lamb_obs, spectra=spec_obs, error=err_obs, spectra_original=spec_obs_original)
-    # np.savez(output_dirname+'min_chi2_dz.npz', chi2=chisqs, zhl=zhl, dz=delta_z, diff=model_diff, rescale_factor=rescale_factor, peak=peak)
 
