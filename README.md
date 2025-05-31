@@ -14,15 +14,14 @@ or simply
 
 ##
 
-Make sure **`dictionary_learn_from_config.py`** and **`dictionary_learn_fx.py`** are in the same folder.  
-By default, `dictionary_learn_from_config.py` creates an `OUTPUT` folder for all output files.
+
+By default, `dictionary_learn.py` creates an `OUTPUT` folder for all output files.
+`quickcat_110k_selected.npz` can be found in Onedrive.
 
 ## Usage  
-`$ python dictionary_learn_from_config.py config_default.yaml`
+`$ python dictionary_learn.py config_default.yaml`
 
-Required files:
- - 7 EAZY templates (configure folder location in config_default.yaml: `eazy_templates_location`)
- - SPHEREx filters (configure folder locaiton in config_default.yaml: `filter_location`)
+
 
 
 
