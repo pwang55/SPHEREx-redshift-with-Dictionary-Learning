@@ -25,12 +25,13 @@ class diagnostic_plots:
 
     def template_plots(self, lamb_rest, D_rest, D_rest_initial):
         
-        fig1, ax1 = plt.subplots(num=self.fig_num)
-        ax1.plot(lamb_rest, D_rest.T, '-', linewidth=1.5, alpha=0.8)
+        fig1, ax1 = plt.subplots(num=self.fig_num, figsize=(8,4))
+        ax1.plot(lamb_rest, D_rest.T, '-', linewidth=1, alpha=0.8)
         ax1.set_xlabel(r"Wavelength [$\mu m$]")
         ax1.set_ylabel('Flux [arb]')
         ax1.set_title('Learned Templates')
         ax1.grid()
+        ax1.set_xlim(0,5.)
         fig1.tight_layout()
         if self.savefig:
             plt.savefig(self.output_dir / 'trained_templates.png', dpi=self.dpi)
@@ -52,10 +53,14 @@ class diagnostic_plots:
             ax2[i,1].tick_params(axis='both', which='major', labelsize=tick_fontsize)
             ax2[i,0].set_ylabel(i, fontsize=tick_fontsize)
 
-        ax2[0,1].set_ylim(np.min(D_diff), np.max(D_diff))
+        if (D_diff==0).all():
+            ax2[0,1].set_ylim(-0.05, 0.05)
+        else:
+            ax2[0,1].set_ylim(np.min(D_diff), np.max(D_diff))
+        
         for i in range(1, Ndict):
             ax2[i, 1].sharey(ax2[0,1])
-        ax2[0,0].set_xlim(0,5.5)
+        ax2[0,0].set_xlim(0,5.)
 
         ax2[0,0].set_title('Initial/Trained Dictionaries')
         ax2[0,1].set_title('Trained-Initial')
@@ -68,7 +73,7 @@ class diagnostic_plots:
             plt.show()
         self.fig_num += 1
 
-    def zp_zs_plots(self, ztrue, zbest_initial, zbest_trained, zmin=0.0, zmax=3.0, catalog='fitting', gridsize=150, gridsize2=(150,30)):
+    def zp_zs_plots(self, ztrue, z_trained, z_initial=None, zmin=0.0, zmax=3.0, catalog='fitting', gridsize=150, gridsize2=(150,30), training=False):
         zpzs_figsize = (12,7)
         lim_offset = 0.05
         bottom_ylim = 0.25
@@ -93,8 +98,8 @@ class diagnostic_plots:
         # gridsize = 100
         bins = 'log'
 
-        nmad_i, eta_i = fx.nmad_eta(zs=ztrue, zp=zbest_initial)
-        nmad_f, eta_f = fx.nmad_eta(zs=ztrue, zp=zbest_trained)
+
+        nmad_f, eta_f = fx.nmad_eta(zs=ztrue, zp=z_trained)
 
         fig, ax = plt.subplots(2, 2, num=self.fig_num, sharex=True, figsize=zpzs_figsize, gridspec_kw={'height_ratios': [3,1], 'width_ratios': [1,1.25]})
         ax[0,0].set_xlim(zmin-lim_offset,zmax+lim_offset)
@@ -113,18 +118,21 @@ class diagnostic_plots:
         ax[1,1].set_xlabel('True Redshift', fontsize=labelfontsize)
 
         ax[1,0].set_ylabel(r'$\Delta z/(1+z_{True})$', fontsize=labelfontsize)
-        ax[0,0].plot(ztrue, zbest_initial, m0, color=markercolor0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth0, alpha=m0alpha,
-                    label=f'Initial, $\eta={eta_i*100:.3f}$%, $\sigma_{{NMAD}}={nmad_i*100:.3f}$%')
-        ax[0,0].plot(ztrue, zbest_trained, m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth1, alpha=m1alpha,
-                    label=f'Trained, $\eta={eta_f*100:.3f}$%, $\sigma_{{NMAD}}={nmad_f*100:.3f}$%')
-        ax[1,0].plot(ztrue, (zbest_initial-ztrue)/(1+ztrue), m0, color=markercolor0, markersize=m0size, markeredgecolor=m0edgec, \
-                     markeredgewidth=markeredgewidth0, alpha=m0alpha)
-        ax[1,0].plot(ztrue, (zbest_trained-ztrue)/(1+ztrue), m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, \
+
+        if training:
+            nmad_i, eta_i = fx.nmad_eta(zs=ztrue, zp=z_initial)
+            ax[0,0].plot(ztrue, z_initial, m0, color=markercolor0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth0, alpha=m0alpha,
+                        label=fr'Initial, $\eta={eta_i*100:.3f}$%, $\sigma_{{NMAD}}={nmad_i*100:.3f}$%')
+            ax[1,0].plot(ztrue, (z_initial-ztrue)/(1+ztrue), m0, color=markercolor0, markersize=m0size, markeredgecolor=m0edgec, \
+                        markeredgewidth=markeredgewidth0, alpha=m0alpha)
+        ax[0,0].plot(ztrue, z_trained, m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth1, alpha=m1alpha,
+                    label=fr'Trained, $\eta={eta_f*100:.3f}$%, $\sigma_{{NMAD}}={nmad_f*100:.3f}$%')
+        ax[1,0].plot(ztrue, (z_trained-ztrue)/(1+ztrue), m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, \
                      markeredgewidth=markeredgewidth1, alpha=m1alpha)
 
-        hb1 = ax[0,1].hexbin(ztrue, zbest_trained, gridsize=gridsize, extent=[zmin, zmax, zmin, zmax], bins=bins)
+        hb1 = ax[0,1].hexbin(ztrue, z_trained, gridsize=gridsize, extent=[zmin, zmax, zmin, zmax], bins=bins)
         cb1 = fig.colorbar(hb1, ax=ax[0,1])
-        hb2 = ax[1,1].hexbin(ztrue, (zbest_trained-ztrue)/(1+ztrue), gridsize=gridsize2, extent=[zmin, zmax, -bottom_ylim, bottom_ylim], bins=bins)
+        hb2 = ax[1,1].hexbin(ztrue, (z_trained-ztrue)/(1+ztrue), gridsize=gridsize2, extent=[zmin, zmax, -bottom_ylim, bottom_ylim], bins=bins)
         cb2 = fig.colorbar(hb2, ax=ax[1,1])
 
         ax[0,0].plot([zmin-lim_offset, zmax+lim_offset], [zmin-lim_offset, zmax+lim_offset], '-', alpha=0.8, color='g', linewidth=1)
@@ -136,7 +144,7 @@ class diagnostic_plots:
         ax[1,0].tick_params(axis='both', which='major', labelsize=tickfontsize)
         ax[0,0].legend(fontsize=legendfontsize, framealpha=0.9, loc='upper left')
         # axs[1].legend(fontsize=20, loc='lower right')
-        # fig.suptitle('Fitting Catalog Redshift Estimation')
+        fig.suptitle(catalog)
         fig.tight_layout()
         if self.savefig:
             plt.savefig(self.output_dir / f'redshift_estimation_performance_{catalog}_catalog.png', dpi=self.dpi)
@@ -164,8 +172,8 @@ class diagnostic_plots:
         for i in range(Ndict):
             pi = p[:,i]
             p_counts[i] = np.sum(pi!=0)
-            p_pos_sums[i] = np.sum(np.fabs(pi))
-            p_sums[i] = np.sum((pi))
+            p_pos_sums[i] = np.nansum(np.fabs(pi))
+            p_sums[i] = np.nansum((pi))
 
         bar1 = ax[1].bar(np.arange(Ndict), p_counts, color='teal')
         ax[1].set_title('# of times dictionary have been used')
@@ -187,7 +195,7 @@ class diagnostic_plots:
         plt.savefig(self.output_dir / 'sparsity_reports.png')
         self.fig_num += 1
 
-    def example_seds(self, cat, lamb_rest, D_rest, D_rest_initial, zgrid, validation_fit_kws, idx=None, filter_info=None):
+    def example_seds(self, cat, lamb_rest, D_rest, D_rest_initial, zgrid, validation_fit_kws, idx=None, filters=None, ztype='zpeak'):
         
         lamb_obs = cat.lamb_obs
         ztrue = cat.ztrue
@@ -240,15 +248,21 @@ class diagnostic_plots:
             # refit with the initial dictionary
             spec_obs_i = np.ascontiguousarray(spec_obs[idx_i])
             err_obs_i = np.ascontiguousarray(err_obs[idx_i])
-            zbest_initial_ex,zlow_initial,zhigh_initial, \
-            coefs_initial,b_initial,best_model_initial,_,_ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
+            zpeak_initial_ex, zbest_initial_ex, zlow_initial,zhigh_initial, \
+            coefs_initial, b_initial, best_model_initial, _, _ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
                                                             D_rest=D_rest_initial, zinput=False, zgrid=zgrid, 
-                                                            filter_info=filter_info, **validation_fit_kws)
+                                                            filters=filters, **validation_fit_kws)
             # refit with the trained dictionary
-            zbest_trained_ex,zlow_trained,zhigh_trained, \
-            coefs_trained,b_best,best_model,_,_ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
+            zpeak_trained_ex, zbest_trained_ex, zlow_trained, zhigh_trained, \
+            coefs_trained, b_best, best_model, _, _ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
                                                     D_rest=D_rest, zinput=False, zgrid=zgrid, 
-                                                    filter_info=filter_info, **validation_fit_kws)
+                                                    filters=filters, **validation_fit_kws)
+            if ztype == 'zpeak':
+                z_trained_ex = zpeak_trained_ex
+                z_initial_ex = zpeak_initial_ex
+            elif ztype == 'zbest':
+                z_trained_ex = zbest_trained_ex
+                z_initial_ex = zbest_initial_ex
             nAi = np.sum(coefs_initial!=0)
             nAf = np.sum(coefs_trained!=0)
             # ymax = np.max(best_model) * 2.0
@@ -266,9 +280,9 @@ class diagnostic_plots:
             ax[row, col].plot(lamb_obs, spec_obs_original[idx_i], '.', color=c1, markersize=ms1, alpha=alpha1, 
                               label=fr"Ground Truth, $z_{{true}}={ztrue[idx_i]:.4f}$")
             ax[row, col].plot(lamb_obs, best_model_initial, '-', linewidth=lw2, color=c2, alpha=alpha2, \
-                            label=fr"Initial Template, $z_{{est}}={zbest_initial_ex:.3f}^{{+{zhigh_initial-zbest_initial_ex:.3f}}}_{{-{zbest_initial_ex-zlow_initial:.3f}}}$")
+                            label=fr"Initial Template, $z_{{est}}={z_initial_ex:.3f}^{{+{zhigh_initial-z_initial_ex:.3f}}}_{{-{z_initial_ex-zlow_initial:.3f}}}$")
             ax[row, col].plot(lamb_obs, best_model, linewidth=lw3, color=c3, alpha=alpha3, \
-                            label=fr"Trained Template, $z_{{est}}={zbest_trained_ex:.3f}^{{+{zhigh_trained-zbest_trained_ex:.3f}}}_{{-{zbest_trained_ex-zlow_trained:.3f}}}$")
+                            label=fr"Trained Template, $z_{{est}}={z_trained_ex:.3f}^{{+{zhigh_trained-z_trained_ex:.3f}}}_{{-{z_trained_ex-zlow_trained:.3f}}}$")
             # ax[row, col].set_xlabel('Observed Wavelength [$\mu$m]', fontsize=8)
             # ax[row, col].set_ylabel('Flux [mJy]', fontsize=8)
             ax[row, col].set_title(fr"Idx={idx_i}, $n_A$={nAf}", fontsize=8)
@@ -276,27 +290,38 @@ class diagnostic_plots:
             ax[row, col].grid()
             ax[row, col].tick_params(axis='both', which='major', labelsize=ticklabelsize)
             ax[row, col].set_ylim(ymin, ymax)
-        fig.supxlabel('Observed Wavelength [$\mu$m]', fontsize=labelfontsize)
+        fig.supxlabel(r'Observed Wavelength [$\mu$m]', fontsize=labelfontsize)
         fig.supylabel('Flux [mJy]', fontsize=labelfontsize)
         fig.tight_layout()
         if self.savefig:
-            plt.savefig(self.output_dir / 'example_fitted_SEDs.png', dpi=self.dpi)
+            plt.savefig(self.output_dir / f'example_fitted_SEDs_{ztype}.png', dpi=self.dpi)
         else:
             plt.show()
         self.fig_num += 1
 
     # Plot fractional uncertaintyt and z-score in 6 uncertainty bins
-    def uncertainty_binplots(self, zs, zp, zl, zh, zp0, zl0, zh0, dat=None, nbins=50):
+    def uncertainty_binplots(self, zs, zp, zl, zh, zp0=None, zl0=None, zh0=None, dat=None, nbins=50, ztype='zbest', training=False):
         if dat is not None:
             zs = dat['ztrue']
-            zp = dat['zest']
+            # zp = dat['zest']
             zl = dat['zlow']
             zh = dat['zhigh']
 
-            zp0 = dat['zest_initial']
+            # zp0 = dat['zest_initial']
             zl0 = dat['zlow_initial']
             zh0 = dat['zhigh_initial']
-        
+            if ztype == 'zpeak':
+                zp = dat['zpeak']
+                zp0 = dat['zpeak_initial']
+            elif ztype == 'zbest':
+                zp = dat['zbest']
+                zp0 = dat['zbest_initial']
+
+        if not training:
+            zp0 = zp
+            zl0 = zl
+            zh0 = zh
+
         color_args = {
             'hist1_color': 'salmon',
             'hist1_alpha': 0.9,
@@ -323,6 +348,8 @@ class diagnostic_plots:
             'g2_color0': 'grey',
             'g2_alpha0': 0.5,
             'g2_lwidth0': 0.8,
+
+            'boxtextsize': 7.5
             }
 
         sigma_ranges = [
@@ -366,60 +393,66 @@ class diagnostic_plots:
         hist2_rows = [2,2,2,3,3,3]
 
         for i, (low, high) in enumerate(sigma_ranges):
+
             h = (frac_uncertainty<high) & (frac_uncertainty>low)
-            h0 = (frac_uncertainty0<high) & (frac_uncertainty0>low)
-
             frac_uncertainty_i = frac_uncertainty[h]
-            frac_uncertainty0_i = frac_uncertainty0[h0]
-
             zsi = zs[h]
-            zpi = zp[h]     
+            zpi = zp[h]
             sigi = sig[h]
-
-            zs0i = zs[h0]
-            zp0i = zp0[h0]     
-            sig0i = sig0[h0]
-
             dzi = zpi - zsi
-            dz0i = zp0i - zs0i
             err_dist_i = dzi/(1 + zsi)
-            err_dist0_i = dz0i/(1 + zs0i)
-
             nmad_i, eta_i = fx.nmad_eta(zs=zsi, zp=zpi)
-            nmad0_i, eta0_i = fx.nmad_eta(zs=zs0i, zp=zp0i)
-
             bias_i = np.mean(err_dist_i)
-            bias0_i = np.mean(err_dist0_i)
-
             med_frac_i = np.median(frac_uncertainty_i)
-            med_frac0_i = np.median(frac_uncertainty0_i)
             ngals_i = len(zpi)
-            ngals0_i = len(zp0i)
+
+            if training:
+                h0 = (frac_uncertainty0<high) & (frac_uncertainty0>low)
+                frac_uncertainty0_i = frac_uncertainty0[h0]
+                zs0i = zs[h0]
+                zp0i = zp0[h0]     
+                sig0i = sig0[h0]
+                dz0i = zp0i - zs0i
+                err_dist0_i = dz0i/(1 + zs0i)
+                nmad0_i, eta0_i = fx.nmad_eta(zs=zs0i, zp=zp0i)
+                bias0_i = np.mean(err_dist0_i)
+                med_frac0_i = np.median(frac_uncertainty0_i)
+                ngals0_i = len(zp0i)
+
 
             row1i = hist1_rows[i]
             col1i = hist1_cols[i]
 
             cts, bins_i, _ = ax[row1i, col1i].hist(err_dist_i, bins=nbins, range=hist1_ranges[i], color=color_args['hist1_color'], alpha=color_args['hist1_alpha'])
-            cts0, bins0_i, _ = ax[row1i, col1i].hist(err_dist0_i, bins=nbins, range=hist1_ranges[i], histtype='step', 
-                                                    linewidth=color_args['hist1_lwidth0'], color=color_args['hist1_color0'], alpha=color_args['hist1_alpha0'])
 
             g_pts = 100
             gaussian_xi = np.linspace(hist1_ranges[i][0], hist1_ranges[i][1], g_pts)
             gaussian_i = np.max(cts) * np.exp(-gaussian_xi**2/(2*med_frac_i**2))
-            gaussian0_i = np.max(cts0) * np.exp(-gaussian_xi**2/(2*med_frac0_i**2))
-
             ax[row1i, col1i].plot(gaussian_xi, gaussian_i, linewidth=color_args['g1_lwidth'], color=color_args['g1_color'], alpha=color_args['g1_alpha'])
-            ax[row1i, col1i].plot(gaussian_xi, gaussian0_i, '--', linewidth=color_args['g1_lwidth0'], color=color_args['g1_color0'], alpha=color_args['g1_alpha0'])
 
-            stats_text = (
-                fr"NMAD: {nmad0_i:.5f}$\rightarrow${nmad_i:.5f}"+'\n'
-                fr"Bias: {bias0_i:.5f}$\rightarrow${bias_i:.5f}"+'\n'
-                fr"$\sigma_{{z/(1+z)}}$: {med_frac0_i:.4f}$\rightarrow${med_frac_i:.4f}"+'\n'
-                fr"$\eta$: {eta0_i*100:.2f}%$\rightarrow${eta_i*100:.2f}%"+'\n'
-                fr"$N_g$: {ngals0_i}$\rightarrow${ngals_i}"
-            )
+            if training:
+                cts0, bins0_i, _ = ax[row1i, col1i].hist(err_dist0_i, bins=nbins, range=hist1_ranges[i], histtype='step', 
+                                                    linewidth=color_args['hist1_lwidth0'], color=color_args['hist1_color0'], alpha=color_args['hist1_alpha0'])
+                gaussian0_i = np.max(cts0) * np.exp(-gaussian_xi**2/(2*med_frac0_i**2))
+                ax[row1i, col1i].plot(gaussian_xi, gaussian0_i, '--', linewidth=color_args['g1_lwidth0'], color=color_args['g1_color0'], alpha=color_args['g1_alpha0'])
+                
+                stats_text = (
+                    fr"NMAD: {nmad0_i:.4f}$\rightarrow${nmad_i:.4f}"+'\n'
+                    fr"Bias: {bias0_i:.4f}$\rightarrow${bias_i:.4f}"+'\n'
+                    fr"$\sigma_{{z/(1+z)}}$: {med_frac0_i:.4f}$\rightarrow${med_frac_i:.4f}"+'\n'
+                    fr"$\eta$: {eta0_i*100:.2f}%$\rightarrow${eta_i*100:.2f}%"+'\n'
+                    fr"$N_g$: {ngals0_i}$\rightarrow${ngals_i}"
+                )
+            else:
+                stats_text = (
+                    fr"NMAD: {nmad_i:.4f}"+'\n'
+                    fr"Bias: {bias_i:.4f}"+'\n'
+                    fr"$\sigma_{{z/(1+z)}}$: {med_frac_i:.4f}"+'\n'
+                    fr"$\eta$: {eta_i*100:.2f}%"+'\n'
+                    fr"$N_g$: {ngals_i}"
+                )
             
-            ax[row1i, col1i].text(0.02, 0.98, stats_text, ha='left', va='top', transform=ax[row1i, col1i].transAxes, fontsize=7,
+            ax[row1i, col1i].text(0.02, 0.98, stats_text, ha='left', va='top', transform=ax[row1i, col1i].transAxes, fontsize=color_args['boxtextsize'],
                     bbox=dict(facecolor='none', alpha=0.7, linewidth=0.0, edgecolor='black', boxstyle='square,pad=0.5'))
 
             ax[row1i, col1i].set_title(fr"{low}$<\sigma_{{z/(1+z)}}<${high}")
@@ -427,64 +460,83 @@ class diagnostic_plots:
             ax[row1i, col1i].set_ylabel(r"$N_g$")
             ax[row1i, col1i].grid(alpha=0.4)
 
+            # Plotting z-score histograms
+
             row2i = hist2_rows[i]
             col2i = hist2_cols[i]
 
             zscore_i = (zpi - zsi)/sigi
-            zscore0_i = (zp0i - zs0i)/sig0i
-
             mean_zscore_i = np.mean(zscore_i)
-            mean_zscore0_i = np.mean(zscore0_i)
             sig_zscore_i = np.std(zscore_i)
-            sig_zscore0_i = np.std(zscore0_i)
+            if training:
+                zscore0_i = (zp0i - zs0i)/sig0i
+                mean_zscore0_i = np.mean(zscore0_i)
+                sig_zscore0_i = np.std(zscore0_i)
 
             cts2, bins2, _ = ax[row2i, col2i].hist(zscore_i, bins=nbins, range=hist2_range, color=color_args['hist2_color'], alpha=color_args['hist2_alpha'])
-            cts0_2, bins0_2, _ = ax[row2i, col2i].hist(zscore0_i, bins=nbins, range=hist2_range, histtype='step', 
-                                                    linewidth=color_args['hist2_lwidth0'], color=color_args['hist2_color0'], alpha=color_args['hist2_alpha0'])
-
             gaussian_xi = np.linspace(hist2_range[0], hist2_range[1], g_pts)
             gaussian_zscore_i = np.max(cts2) * np.exp(-gaussian_xi**2/(2))
-            gaussian_zscore0_i = np.max(cts0_2) * np.exp(-gaussian_xi**2/(2))
             ax[row2i, col2i].plot(gaussian_xi, gaussian_zscore_i, linewidth=color_args['g2_lwidth'], color=color_args['g2_color'], alpha=color_args['g2_alpha'])
-            ax[row2i, col2i].plot(gaussian_xi, gaussian_zscore0_i, '--', linewidth=color_args['g2_lwidth0'], color=color_args['g2_color0'], alpha=color_args['g2_alpha0'])
+            if training:
+                cts0_2, bins0_2, _ = ax[row2i, col2i].hist(zscore0_i, bins=nbins, range=hist2_range, histtype='step', 
+                                                    linewidth=color_args['hist2_lwidth0'], color=color_args['hist2_color0'], alpha=color_args['hist2_alpha0'])
+                gaussian_zscore0_i = np.max(cts0_2) * np.exp(-gaussian_xi**2/(2))
+                ax[row2i, col2i].plot(gaussian_xi, gaussian_zscore0_i, '--', linewidth=color_args['g2_lwidth0'], color=color_args['g2_color0'], alpha=color_args['g2_alpha0'])
+                stats_text2 = (
+                    fr"($\mu$, $\sigma$)=({mean_zscore0_i:.2f}, {sig_zscore0_i:.2f})"+'\n'+fr"$\rightarrow$({mean_zscore_i:.2f}, {sig_zscore_i:.2f})"
+                )
+            else:
+                stats_text2 = (
+                    fr"($\mu$, $\sigma$)=({mean_zscore_i:.2f}, {sig_zscore_i:.2f})"
+                )
+
             ax[row2i, col2i].set_title(fr"{low}$<\sigma_{{z/(1+z)}}<${high}")
             ax[row2i, col2i].set_xlabel(r'($z_p$-$z_s$)/$\sigma_z$')
             ax[row2i, col2i].set_ylabel(r"$N_g$")
             ax[row2i, col2i].grid(alpha=0.4)
 
-            stats_text2 = (
-                fr"($\mu$, $\sigma$)=({mean_zscore0_i:.2f}, {sig_zscore0_i:.2f})"+'\n'+fr"$\rightarrow$({mean_zscore_i:.2f}, {sig_zscore_i:.2f})"
-            )
-            ax[row2i, col2i].text(0.35, 0.98, stats_text2, ha='right', va='top', transform=ax[row2i, col2i].transAxes, fontsize=7,
+
+            ax[row2i, col2i].text(0.38, 0.98, stats_text2, ha='right', va='top', transform=ax[row2i, col2i].transAxes, fontsize=color_args['boxtextsize'],
                     bbox=dict(facecolor='none', alpha=0.7, linewidth=0.0, edgecolor='black', boxstyle='square,pad=0.5'))
-        fig.suptitle('Dictionary learning')
+        fig.suptitle(f'Dictionary learning, {ztype}')
         fig.text(0.02, 0.73, 'Redshift error distribution', va='center', ha='center', rotation='vertical', fontsize=10)
         fig.text(0.02, 0.28, 'Z-Score', va='center', ha='center', rotation='vertical', fontsize=10)
         fig.tight_layout(rect=[0.02, 0.0, 1.0, 0.98])
         if self.savefig:
-            plt.savefig(self.output_dir / 'binplot_error_dist_zscore.png', dpi=self.dpi)
+            plt.savefig(self.output_dir / f'binplot_error_dist_zscore_{ztype}.png', dpi=self.dpi)
         else:
             plt.show()
         self.fig_num += 1
 
 
 
-    def hexbin_binplot(self, zs, zp, zl, zh, zp0, zl0, zh0, dat=None, gridsize=100):
-        figsize = (12,12)
+    def hexbin_binplot(self, zs, zp, zl, zh, zp0=None, zl0=None, zh0=None, dat=None, gridsize=100, ztype='zbest', training=False):
+
+        figsize = (12,12-(1-training)*6)
         cmap1 = 'viridis'
         cmap2 = 'cividis'
 
         if dat is not None:
             zs = dat['ztrue']
-            zp = dat['zest']
+            # zp = dat['zest']
             zl = dat['zlow']
             zh = dat['zhigh']
 
-            zp0 = dat['zest_initial']
+            # zp0 = dat['zest_initial']
             zl0 = dat['zlow_initial']
             zh0 = dat['zhigh_initial']
+            if ztype == 'zpeak':
+                zp = dat['zpeak']
+                zp0 = dat['zpeak_initial']
+            elif ztype == 'zbest':
+                zp = dat['zbest']
+                zp0 = dat['zbest_initial']
+        if not training:
+            zp0 = zp
+            zl0 = zl
+            zh0 = zh
 
-        fig1, ax1 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=figsize, num=self.fig_num)
+        fig1, ax1 = plt.subplots(4-(1-training)*2, 3, sharex=True, sharey=True, figsize=figsize, num=self.fig_num)
         zmin = 0.0
         zmax = 3.0
         # gridsize = (80,100)
@@ -505,30 +557,30 @@ class diagnostic_plots:
         p2_rows = [2,2,2,3,3,3]
 
         sig = (zh-zl)/2
-        sig0 = (zh0-zl0)/2
         frac_uncertainty = sig/(1+zp)
-        frac_uncertainty0 = sig0/(1+zp0)
+        if training:
+            sig0 = (zh0-zl0)/2
+            frac_uncertainty0 = sig0/(1+zp0)            
 
         for i, (low, high) in enumerate(sigma_ranges):
             h = (frac_uncertainty<high) & (frac_uncertainty>low)
-            h0 = (frac_uncertainty0<high) & (frac_uncertainty0>low)
-
             zsi = zs[h]
             zpi = zp[h]
-            zs0i = zs[h0]
-            zp0i = zp0[h0]
-
             dzi = zpi - zsi
-            dz0i = zp0i - zs0i
             err_dist_i = dzi/(1 + zsi)
-            err_dist0_i = dz0i/(1 + zs0i)
-
             nmad_i, eta_i = fx.nmad_eta(zs=zsi, zp=zpi)
-            nmad0_i, eta0_i = fx.nmad_eta(zs=zs0i, zp=zp0i)
             bias_i = np.mean(err_dist_i)
-            bias0_i = np.mean(err_dist0_i)
             ngals_i = len(zpi)
-            ngals0_i = len(zp0i)
+
+            if training:
+                h0 = (frac_uncertainty0<high) & (frac_uncertainty0>low)
+                zs0i = zs[h0]
+                zp0i = zp0[h0]
+                dz0i = zp0i - zs0i
+                err_dist0_i = dz0i/(1 + zs0i)
+                nmad0_i, eta0_i = fx.nmad_eta(zs=zs0i, zp=zp0i)
+                bias0_i = np.mean(err_dist0_i)
+                ngals0_i = len(zp0i)
 
             row1i = p1_rows[i]
             col1i = p1_cols[i]
@@ -557,39 +609,42 @@ class diagnostic_plots:
             ax1[row1i, col1i].set_xlim(zmin, zmax)
             ax1[row1i, col1i].set_ylim(zmin, zmax)
 
-            row2i = p2_rows[i]
-            col2i = p2_cols[i]
+            # Plot z initial hexbins
+            if training:    
+                row2i = p2_rows[i]
+                col2i = p2_cols[i]
 
-            if sum(h0)>0:
-                hb2 = ax1[row2i, col2i].hexbin(zs0i, zp0i, gridsize=gridsize, extent=[zmin, zmax, zmin, zmax], bins=hexbins_scale, cmap=cmap2)
-                cb2 = fig1.colorbar(hb2, ax=ax1[row2i, col2i])
-            else:
-                hb2 = ax1[row2i, col2i].hexbin([0], [0], gridsize=gridsize, extent=[zmin, zmax, zmin, zmax], bins=hexbins_scale, cmap=cmap2)
-                cb2 = fig1.colorbar(hb2, ax=ax1[row2i, col2i])
-            ax1[row2i, col2i].plot([zmin, zmax], [zmin, zmax], linewidth=0.7, color='salmon', alpha=0.8)
+                if sum(h0)>0:
+                    hb2 = ax1[row2i, col2i].hexbin(zs0i, zp0i, gridsize=gridsize, extent=[zmin, zmax, zmin, zmax], bins=hexbins_scale, cmap=cmap2)
+                    cb2 = fig1.colorbar(hb2, ax=ax1[row2i, col2i])
+                else:
+                    hb2 = ax1[row2i, col2i].hexbin([0], [0], gridsize=gridsize, extent=[zmin, zmax, zmin, zmax], bins=hexbins_scale, cmap=cmap2)
+                    cb2 = fig1.colorbar(hb2, ax=ax1[row2i, col2i])
+                ax1[row2i, col2i].plot([zmin, zmax], [zmin, zmax], linewidth=0.7, color='salmon', alpha=0.8)
 
-            ax1[row2i, col2i].set_title(fr"{low}$<\sigma_{{z/(1+z)}}<${high}")
-            ax1[row2i, col2i].set_xlabel(r'$z_{true}$')
-            ax1[row2i, col2i].set_ylabel(r"$z_{est}$")
-            # ax1[row2i, col2i].grid(alpha=0.4)
-            ax1[row2i, col2i].set_xlim(zmin, zmax)
-            ax1[row2i, col2i].set_ylim(zmin, zmax)
+                ax1[row2i, col2i].set_title(fr"{low}$<\sigma_{{z/(1+z)}}<${high}")
+                ax1[row2i, col2i].set_xlabel(r'$z_{true}$')
+                ax1[row2i, col2i].set_ylabel(r"$z_{est}$")
+                # ax1[row2i, col2i].grid(alpha=0.4)
+                ax1[row2i, col2i].set_xlim(zmin, zmax)
+                ax1[row2i, col2i].set_ylim(zmin, zmax)
 
-            stats_text2 = (
-                fr"NMAD: {nmad0_i:.5f}"+'\n'
-                fr"Bias: {bias0_i:.5f}"+'\n'
-                fr"$\eta$: {eta0_i*100:.2f}%"+'\n'
-                fr"$N_g$: {ngals0_i}"
-            )
-            ax1[row2i, col2i].text(0.62, 0.23, stats_text2, ha='left', va='top', transform=ax1[row2i, col2i].transAxes, fontsize=7,
-                    bbox=dict(facecolor='w', alpha=0.7, linewidth=0.0, edgecolor='black', boxstyle='square,pad=0.5'))
+                stats_text2 = (
+                    fr"NMAD: {nmad0_i:.5f}"+'\n'
+                    fr"Bias: {bias0_i:.5f}"+'\n'
+                    fr"$\eta$: {eta0_i*100:.2f}%"+'\n'
+                    fr"$N_g$: {ngals0_i}"
+                )
+                ax1[row2i, col2i].text(0.62, 0.23, stats_text2, ha='left', va='top', transform=ax1[row2i, col2i].transAxes, fontsize=7,
+                        bbox=dict(facecolor='w', alpha=0.7, linewidth=0.0, edgecolor='black', boxstyle='square,pad=0.5'))
 
         # fig.suptitle('Dictionary learning')
-        fig1.text(0.02, 0.73, 'Trained dictionary performance', va='center', ha='center', rotation='vertical', fontsize=10)
-        fig1.text(0.02, 0.28, 'Initial dictionary performance', va='center', ha='center', rotation='vertical', fontsize=10)
+        fig1.text(0.02, 0.73*training+0.5*(1-training), f'Trained dictionary performance ({ztype})', va='center', ha='center', rotation='vertical', fontsize=10)
+        if training:
+            fig1.text(0.02, 0.28, f'Initial dictionary performance ({ztype})', va='center', ha='center', rotation='vertical', fontsize=10)
         fig1.tight_layout(rect=[0.02, 0.0, 1.0, 0.98])
         if self.savefig:
-            plt.savefig(self.output_dir / 'binplot_hexbin.png', dpi=self.dpi)
+            plt.savefig(self.output_dir / f'binplot_hexbin_{ztype}.png', dpi=self.dpi)
         else:
             plt.show()
         self.fig_num += 1

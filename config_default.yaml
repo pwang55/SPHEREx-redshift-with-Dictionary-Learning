@@ -1,48 +1,60 @@
 # Configure file for main_dictionary_learn.py
 
 Catalog:
-    # training_catalog: input_catalogs/quickcat_10k_specz_gals.npz   # input catalog for training
-    training_catalog: input_catalogs/deepfield_selected.npz   # input catalog for training
-    # training_catalog: input_catalogs/deepfield_selected_qc110k_1500.npz   # input catalog for training
-    # evaluation_catalog: input_catalogs/quickcat_10k_specz_gals.npz   # input catalog for evaluation
-    evaluation_catalog: input_catalogs/quickcat_110k_selected.npz   # input catalog for evaluation
+    # training_catalog: input_catalogs/GAMA_cut_rand3000.npz   # input catalog for training
+    # training_catalog: input_catalogs/deepfield_7795_cut_GAMA_cut_rand1500.npz   # input catalog for training
+    training_catalog: input_catalogs/deepfield_7795_cut.npz   # input catalog for training
+    validation_catalog: input_catalogs/quickcat_110k_selected.npz   # input catalog for validation
+    # validation_catalog: input_catalogs/GAMA_quickcat_fiducial_parquet.npz   # input catalog for validation
+    filter_central_wavelengths: FILTERS/SPHEREx_102/fiducial_filters_cent_waves.txt   # Central wavelength in microns, if left blank, will use wavelengths from catalog files
     Ndat_training: 20000                            # Number of input training data to train
-    Ndat_evaluation: 20000                          # Number of input fitting catalog
+    Ndat_validation: 167000                          # Number of input fitting catalog
     use_DESI_flag: True                             # If true, when DESI_flag=1, fix redshift, will ignore Ncalibrators
     Ncalibrators: 1000                              # Number of calibration galaxies that will use fixed zspec when training in the beginning, even if fix_z=True
-    calibrator_SNR: 100                             # Minimum SNR at channel 51 for sources to qualify as calibrator sources
+    calibrator_SNR: 5                             # Minimum SNR at channel 51 for sources to qualify as calibrator sources
     f_lambda_mode: False                            # Running the code with all fluxes in f_lambda, default: False    
 
 Dictionary:
-    # read_from_file: initial_dicts/quickcat_10k_hres_kmean12_z0_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
-    read_from_file: initial_dicts/dicts_eazy7_dust_kmean3_fnu.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    read_from_file: initial_dicts/brown_cosmos_kmean20.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    # read_from_file: initial_dicts/converged_trained.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    # read_from_file: initial_dicts/GAMA_trained_test.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    # read_from_file: False
     add_constant: False                             # If true, added a constant dictionary that will not be trained but will be used for fitting
     Fix_dicts: 0                                    # How many dictionaries to be fixed at the end, not including constant; N dicts counting from the end will not be updated
-    Ndict: 15                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to actual number of dictionaries in file
+    Ndict: 12                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to actual number of dictionaries in file
 
     # If you want to initialize dictionaries from EAZY and noise, use settings below (not maintained anymore)
-    num_EAZY_as_dict: 7                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
-    dict_fluctuation_scaling_start: 1.0E-2          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
+    num_EAZY_as_dict: 0                             # Number of EAZY templates used to initialize dictionaries, 0~7, ignored if read_from_file
+    dict_fluctuation_scaling_start: 1.0E-3          # How much smaller the first noise dictionary is compared to EAZY template, default 1e-2
     dict_fluctuation_scaling_base: 2                # Initialize dictionaries with (base)**(-1) decreasing magnitude 
 
 Algorithm:
-    Niterations: 50                                  # Number of iterations to train
+    Training: True                                  # If False, skip training and use input dictionaries to fit validation catalog
+    Nepoch: 100                                    # Number of epochs to train
     update_algorithm: 1                             # 0: D*p/sum(p^2), psudo-inverse vector method, 1: Block-coordinate descent from arXiv:0908.0050v2
     fix_z: True                                     # If True, always use ztrue from input file during all training and doesn't perform zgrid search
-    Centering: True                                # If True, center all initial dictionaries (and normalized) and input catalog, default=False
+    Centering: False                                # If True, center all initial dictionaries (and normalized) and input catalog, default=False
     AB_update_tolerance: 1.0E-3                     # Iterative tolerance for updating A and B matrix
     max_update_loops: 10                            # if algorithm = 1, MAXIMUM number of loops to run updates on dictionaries in case A & B couldn't converge
     remove_old_ab_info: True                        # If True, after each epoch, when learning the same spectra again, remove old A and B info
+    epochs_to_keep: 1                               # How many epochs information to keep in A and B matrices
+    scale_past_data: True                           # Scale past A & B information with (1-1/t)
+    separate_training_weights: False                 # Have different training weights for Bands 1~4 and Bands 5, 6; if False, weights1 and 2 are not used
+    weights1: 1.0
+    weights2: 0.5
     # Setting for update algorithm 0, not maintained anymore
     learning_rate0: 0.005                            # Regular learning rate, not used when algorithm = 1
     learning_rate_cali: 0.01                         # Learning rate for calibration objects, not used when algorithm = 1
 
 LARSlasso:        
     LARSlasso: True                                 # If True, use LARS-lasso to find sparse solution for template fitting
-    alpha: 0.03                                     # Minimum required correlation between atoms and residue during LARSlasso
-    alpha_sigma: 1.0                                  # In addition to alpha above, how many sigma of correlation as minimum alpha
+    alpha_train: 0.1                                     # Minimum required correlation between atoms and residue during LARSlasso
+    alpha_sigma_train: 0.0                                  # In addition to alpha above, how many sigma of correlation as minimum alpha
+    alpha_fit: 0.00
+    alpha_sigma_fit: 0.0
     positive: True                                  # If True, require positive fitted coefficients
-    best_cp: False                                   # EXPERIMENTAL If True, use LARS-lasso fit with the lowest Cp estimator value
+    train_best_estimator:                           # EXPERIMENTAL If 'Cp' or 'BIC', use LARS-lasso fit with the lowest Cp/BIC estimator value; leave blank for None
+    fit_best_estimator:                        # EXPERIMENTAL If 'Cp' or 'BIC', use LARS-lasso fit with the lowest Cp/BIC estimator value; leave blank for None
     max_feature:                                    # Maximum allowed dictionaries to fit each galaxy, leave blank for no restriction
     active_OLS_training: False                      # If True, only use alpha as active template selection and calculate OLS solution with active templates during training, default=False
     active_OLS_fitting: False                       # If True, during fitting use OLS solution with active sets, default=False
@@ -54,14 +66,17 @@ LARSlasso:
 Fitting:
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
     fit_training_catalog: False                      # If True, after training, do fitting and create performance plot for JUST training sets
-    convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting, default all False
+    fit_initial_dicts: False                        # If True, also use initial dictionary to fit the validation catalog
+    multiprocess: True                             # Split validation to several parts for validation using both trained and initial dictionaries
+    mp_threads: 4
+    convolve_filters: [False, False, False]         # Convolve with filters during 1st stage (rough search), 2nd stage (fine search) and fitting (both stage), default all False
 
 Zgrid:                                              # Note that default zgrid resolution around best-fit is 0.001 regardless of zgrid setting; this is just for efficiency
     zmax: 3.0                                       # Max allowed fitted redshift
     zmin: 0.0                                       # Min allowed fitted redshift
     dz: 0.002                                       # Step size for zgrid, default=0.002
     scale_1plusz: True                              # if True, zgrid scale as dz(1+z), default=True
-    local_finegrid: True                           # If True, after searching in zgrid, do a finer zgrid search around with higher resolution, default=False
+    local_finegrid: False                           # If True, after searching in zgrid, do a finer zgrid search around with higher resolution, default=False
     local_finegrid_size: 0.03                       # If local_finegrid=True, fine-grid size in each direction from zbest, default=0.03
     local_finegrid_dz: 0.001                        # Fine grid dz size, default=0.001
     testing_zgrid: False                           # If True, ignore above setting and instead use the pre-defined hand-picked grid combined with local fine grid
@@ -69,9 +84,10 @@ Zgrid:                                              # Note that default zgrid re
                                                     # at intervals [0, 0.1, 0.3, 0.5, 1, 1.5]
 
 Directory_locations:                                # All locations can be relative or absolute
-    eazy_templates_location:                        # EAZY templates folder location, leave it blank if not using
-    filter_location:                                # SPHEREx filters folder location, leave it blank if not using filters
-    # filter_location: spherex_paoyu_filters          # SPHEREx filters folder location
+    # eazy_templates_location:                        # EAZY templates folder location, leave it blank if not using
+    eazy_templates_location: EAZY_1p1_Spectra                       # EAZY templates folder location, leave it blank if not using
+    # filter_list:                                # SPHEREx filters list location, leave it blank if not using filters
+    filter_list: FILTERS/SPHEREx_102/fiducial_filters.txt          # SPHEREx filters list location
     OUTPUT: OUTPUTS                                 # Output files directory, leave it blank if not using
     Plots_subfolder: PLOTS                          # Create an additional folder to store plots, leave it blank if not using
     parameters_report: parameters_report.txt       # Save the essential run information in this file in OUTPUT folder

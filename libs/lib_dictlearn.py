@@ -24,12 +24,13 @@ class Configs:
 
         # Catalog configurations
         self.training_catalog = self.Catalog['training_catalog']
-        self.evaluation_catalog = self.Catalog['evaluation_catalog']
+        self.validation_catalog = self.Catalog['validation_catalog']
+        self.filter_central_wavelengths = self.Catalog['filter_central_wavelengths']
         self.Ndat = self.Catalog['Ndat_training']
-        self.Ndat_evaluation = self.Catalog['Ndat_evaluation']
+        self.Ndat_validation = self.Catalog['Ndat_validation']
         self.Ncalibrators = self.Catalog['Ncalibrators']
         self.use_DESI_flag = self.Catalog['use_DESI_flag']
-        self.calibrator_SNR51 = self.Catalog['calibrator_SNR']
+        self.calibrator_SNR = self.Catalog['calibrator_SNR']
         self.f_lambda_mode = self.Catalog['f_lambda_mode']
 
         # Dictionary input configurations
@@ -44,13 +45,19 @@ class Configs:
         self.dict_fluctuation_scaling_base = self.Dictionary['dict_fluctuation_scaling_base']
 
         # Algorithm configurations
-        self.Niterations = self.Algorithm['Niterations']
+        self.training = self.Algorithm['Training']
+        self.Nepoch = self.Algorithm['Nepoch']
         self.algorithm = self.Algorithm['update_algorithm']
         self.fix_z = self.Algorithm['fix_z']
         self.centering = self.Algorithm['Centering']
         self.AB_update_tolerance = self.Algorithm['AB_update_tolerance']
         self.max_AB_loops = self.Algorithm['max_update_loops']
         self.remove_old_ab_info = self.Algorithm['remove_old_ab_info']
+        self.epochs_to_keep = self.Algorithm['epochs_to_keep']
+        self.scale_past_data = self.Algorithm['scale_past_data']
+        self.separate_training_weights = self.Algorithm['separate_training_weights']
+        self.weights1 = self.Algorithm['weights1']
+        self.weights2 = self.Algorithm['weights2']
         self.learning_rate0 = self.Algorithm['learning_rate0']
         self.learning_rate_cali = self.Algorithm['learning_rate_cali']
         # self.residue_factor = self.Algorithm['residue_factor']
@@ -58,25 +65,31 @@ class Configs:
 
         # LARSlasso configurations
         self.larslasso = self.LARSlasso['LARSlasso']
-        self.lars_alpha = self.LARSlasso['alpha']
-        self.LARSlasso_alpha_sigma = self.LARSlasso['alpha_sigma']
-        self.lars_positive = self.LARSlasso['positive']
-        self.best_cp = self.LARSlasso['best_cp']
+        self.larslasso_alpha_train = self.LARSlasso['alpha_train']
+        self.larslasso_alpha_sigma_train = self.LARSlasso['alpha_sigma_train']
+        self.larslasso_alpha_fit = self.LARSlasso['alpha_fit']
+        self.larslasso_alpha_sigma_fit = self.LARSlasso['alpha_sigma_fit']
+        self.larslasso_positive = self.LARSlasso['positive']
+        self.train_best_estimator = self.LARSlasso['train_best_estimator']
+        self.fit_best_estimator = self.LARSlasso['fit_best_estimator']
         self.max_feature = self.LARSlasso['max_feature']
         self.active_OLS_training = self.LARSlasso['active_OLS_training']
         self.active_OLS_fitting = self.LARSlasso['active_OLS_fitting']
         self.center_Xy = self.LARSlasso['center_Xy']
         self.unit_X = self.LARSlasso['unit_X']
         self.unit_y = self.LARSlasso['unit_y']
-        self.LARSlasso_alpha_scaling = self.LARSlasso['alpha_scaling']
+        self.larslasso_alpha_scaling = self.LARSlasso['alpha_scaling']
 
         # Fitting configurations
         self.probline = self.Fitting['probline']
         self.fit_training_catalog = self.Fitting['fit_training_catalog']
+        self.fit_initial_dicts = self.Fitting['fit_initial_dicts']
         self.convolve_filters = self.Fitting['convolve_filters']
         self.convolve_filter = self.convolve_filters[0] # choose to convolve templates with filter or not in the first stage of optimized grid search
         self.last_stage_convolve_filter = self.convolve_filters[1]   # whether to colvolve with filters in the last stage of grid search 
         self.fitting_convolve_filter = self.convolve_filters[2] # Whether to convolve with filters in the end when fitting final redshifts
+        self.multiprocess = self.Fitting['multiprocess']
+        self.mp_threads = self.Fitting['mp_threads']
 
         # Zgrid configurations
         self.zmax = self.Zgrid['zmax']
@@ -92,26 +105,26 @@ class Configs:
 
         # Directory locations
         self.eazy_templates_location = self.Directory_locations['eazy_templates_location']
-        self.filter_location = self.Directory_locations['filter_location']
+        self.filter_list = self.Directory_locations['filter_list']
         self.output_dirname = self.Directory_locations['OUTPUT']
         self.Plots_subfolder = self.Directory_locations['Plots_subfolder']
         self.parameters_report = self.Directory_locations['parameters_report']
 
-        if self.filter_location is None:
+        if self.filter_list is None:
             self.convolve_filter = False
             self.last_stage_convolve_filter = False
             self.fitting_convolve_filter = False
 
-        # keywords for fit_zgrid function (training)
+        # keywords for fit_zgrid function (training) has to match fit_zgrid input keywords
         self.fit_zgrid_training_kws = {
                             'larslasso': self.larslasso,
-                            'alpha': self.lars_alpha,
-                            'alpha_sig': self.LARSlasso_alpha_sigma,
-                            'lars_positive': self.lars_positive,
-                            'best_cp': self.best_cp,
+                            'alpha': self.larslasso_alpha_train,
+                            'alpha_sig': self.larslasso_alpha_sigma_train,
+                            'positive': self.larslasso_positive,
+                            'best_estimator': self.train_best_estimator,
                             'max_feature': self.max_feature,
                             'active_ols': self.active_OLS_training,
-                            'alpha_ns_scaling': self.LARSlasso_alpha_scaling,
+                            'alpha_ns_scaling': self.larslasso_alpha_scaling,
                             'center_Xy': self.center_Xy,
                             'unit_X': self.unit_X,
                             'unit_y': self.unit_y,
@@ -130,8 +143,13 @@ class Configs:
 
         self.fit_zgrid_validation_kws = self.fit_zgrid_training_kws.copy()
         self.fit_zgrid_validation_kws['error'] = True
+        self.fit_zgrid_validation_kws['conv'] = self.fitting_convolve_filter
         self.fit_zgrid_validation_kws['conv_finegrid'] = self.fitting_convolve_filter
         self.fit_zgrid_validation_kws['active_ols'] = self.active_OLS_fitting
+        self.fit_zgrid_validation_kws['best_estimator'] = self.fit_best_estimator
+        self.fit_zgrid_validation_kws['alpha'] = self.larslasso_alpha_fit
+        self.fit_zgrid_validation_kws['alpha_sig'] = self.larslasso_alpha_sigma_fit
+
 
 
 class Catalog:
@@ -154,6 +172,7 @@ class Catalog:
         except: 
             spec_obs_original = spec_obs.copy()
 
+        snr[np.isnan(snr)] = 0.0    # TEMP
         snr_mask = (snr[:,SNR_channel]>min_SNR) & (snr[:,SNR_channel]<max_SNR)
         ztrue = ztrue[snr_mask][:Ndat]
         spec_obs = spec_obs[snr_mask][:Ndat]
@@ -181,6 +200,8 @@ class Catalog:
         self.min_SNR = min_SNR
         self.SNR_channel = SNR_channel
         self.snr_i = snr[:,51]
+        self.snr_norm = np.linalg.norm(snr, axis=1)
+
 
     def obj(self, idx):
         obji = SimpleNamespace()
@@ -292,7 +313,7 @@ def flambda2fnu(wl, flux):
 
 # Initialize dictionary
 def initialize_dicts(Ndict, dictionary_fluctuation_scaling, 
-                     templates_EAZY=None, num_EAZY_as_dict=1, lamb_rest=np.arange(0.01,6.0,0.01)):
+                     templates_EAZY=None, num_EAZY_as_dict=1, lamb_rest=np.arange(0.2,6.0,0.01), add_constant=False):
     """
     Return: D_rest
     """
@@ -304,8 +325,14 @@ def initialize_dicts(Ndict, dictionary_fluctuation_scaling,
     # template_scale = np.std(D_rest_list[0])
     # Rest of the dictionary to be randomly initialized
     for i in range(Ndict-num_EAZY_as_dict):
-        D_rest_list.append(np.random.randn(len(lamb_rest))*dictionary_fluctuation_scaling[i])
-    D_rest_list.append(np.ones_like(lamb_rest))
+        # rand_dict_i = np.random.randn(len(lamb_rest))*dictionary_fluctuation_scaling[i]
+        rand_dict_i = np.random.randn(len(lamb_rest))
+        rand_dict_i += np.fabs(np.min(rand_dict_i))
+        D_rest_list.append(rand_dict_i/np.linalg.norm(rand_dict_i))
+    if add_constant:
+        constant_dict = np.ones_like(lamb_rest)
+        constant_dict = constant_dict / np.linalg.norm(constant_dict)
+        D_rest_list.append(constant_dict)
     D_rest = np.vstack(tuple(D_rest_list))
     # note that the last row is a constant DC value to enable the code to fit out the average value
     # D_rest_initial = D_rest.copy()
@@ -313,41 +340,72 @@ def initialize_dicts(Ndict, dictionary_fluctuation_scaling,
 
 
 # Read SPHEREx filters
-def read_filters(filter_location):
-    """
-    Return: Nfilt, filt_length, filt_norm, filt_all_lams, filt_all_lams_reshaped
-    """
-    # if convolve_filter:
-    if filter_location is not None:
-        filter_dir = Path(filter_location)   
-    filtlams = []  # for storing filter wavelengths
-    for i in range(1,103):
-        if len(str(i)) == 1:
-            idx_str = '00'+str(i)
-        elif len(str(i)) == 2:
-            idx_str = '0'+str(i)
-        elif len(str(i)) == 3:
-            idx_str = str(i)
-        filt = pd.read_csv(filter_dir / f'spherex_paoyu_{idx_str}.txt', sep='\s+')
-        lams_i = filt['lambda']
-        filtlams.append(lams_i/10000) # convert to um
-    ftrans = filt['transmission'].to_numpy()   # All transmission looks the same, so just take the last one
-    filtlams = np.array(filtlams)
-    filt_norm = np.zeros(len(filtlams))
+def read_filters(filter_list, half_length=105):
+    filter_dir = Path(filter_list).parent
+    filter_names = np.loadtxt(filter_list, dtype=str)
+    Nf = filter_names.shape[0]
+    filters = np.zeros((Nf, 2, half_length*2))
 
-    # Calculate filter normalization
-    # Also save all filters' wavelength points in a single 1-dimensional array
-    filt_all_lams = []
-    for i in range(len(filtlams)):
-        lb = filtlams[i]
-        filt_norm[i] = max(lb[ftrans>0])-min(lb[ftrans>0])
-        filt_all_lams.extend(lb[ftrans>0])
-    filt_all_lams = np.array(filt_all_lams)
-    filt_length = len(lb[ftrans>0])  # each filters length
-    Nfilt = len(filtlams)
-    filt_all_lams_reshaped = filt_all_lams.reshape((Nfilt, filt_length))
+    for i in range(Nf):
+        filter_path_name = filter_dir / Path(filter_names[i])
+        filt_i = np.loadtxt(filter_path_name)
+        wavelength_i = filt_i[:,0] * 1e-4   # convert from AA to micron
+        response_i = filt_i[:,1]
+        arg_peak = np.argmax(response_i)
+        if arg_peak - half_length < 0:
+            istart = 0
+            ifinish = half_length*2
+        elif arg_peak + half_length > len(wavelength_i):
+            ifinish = len(wavelength_i)
+            istart = ifinish - half_length*2
+        else:
+            istart = arg_peak - half_length
+            ifinish = arg_peak + half_length
+        wavelength_i1 = wavelength_i[istart:ifinish]
+        response_i1 = response_i[istart:ifinish]
+        tot_response_i1 = np.trapezoid(response_i1, wavelength_i1)
+        response_i1 = response_i1 / tot_response_i1    # divide by total response now so that when convolving SED with filters no normalization is needed
+        filters[i][0] = wavelength_i1
+        filters[i][1] = response_i1
+        # filters.append((wavelength_i1, response_i1))
+    return filters
 
-    return Nfilt, filt_length, filt_norm, filt_all_lams, filt_all_lams_reshaped
+# # Read SPHEREx filters old
+# def read_filters(filter_location):
+#     """
+#     Return: Nfilt, filt_length, filt_norm, filt_all_lams, filt_all_lams_reshaped
+#     """
+#     # if convolve_filter:
+#     if filter_location is not None:
+#         filter_dir = Path(filter_location)   
+#     filtlams = []  # for storing filter wavelengths
+#     for i in range(1,103):
+#         if len(str(i)) == 1:
+#             idx_str = '00'+str(i)
+#         elif len(str(i)) == 2:
+#             idx_str = '0'+str(i)
+#         elif len(str(i)) == 3:
+#             idx_str = str(i)
+#         filt = pd.read_csv(filter_dir / f'spherex_paoyu_{idx_str}.txt', sep='\s+')
+#         lams_i = filt['lambda']
+#         filtlams.append(lams_i/10000) # convert to um
+#     ftrans = filt['transmission'].to_numpy()   # All transmission looks the same, so just take the last one
+#     filtlams = np.array(filtlams)
+#     filt_norm = np.zeros(len(filtlams))
+
+#     # Calculate filter normalization
+#     # Also save all filters' wavelength points in a single 1-dimensional array
+#     filt_all_lams = []
+#     for i in range(len(filtlams)):
+#         lb = filtlams[i]
+#         filt_norm[i] = max(lb[ftrans>0])-min(lb[ftrans>0])
+#         filt_all_lams.extend(lb[ftrans>0])
+#     filt_all_lams = np.array(filt_all_lams)
+#     filt_length = len(lb[ftrans>0])  # each filters length
+#     Nfilt = len(filtlams)
+#     filt_all_lams_reshaped = filt_all_lams.reshape((Nfilt, filt_length))
+
+#     return Nfilt, filt_length, filt_norm, filt_all_lams, filt_all_lams_reshaped
 
 
 # Load EAZY templates
@@ -355,7 +413,7 @@ def load_EAZY(lamb_um, eazy_templates_location):
     eazy_templates_dir = Path(eazy_templates_location)
     dfs = []
     for i in range(1,8):
-        dfi = pd.read_csv(eazy_templates_dir / f'eazy_v1.1_sed{i}.dat', names=['lambda_ang','flux'], sep='\s+')
+        dfi = pd.read_csv(eazy_templates_dir / f'eazy_v1.1_sed{i}.dat', names=['lambda_ang','flux'], sep=r'\s+')
         # if i != 6:
         dfs.append(np.interp(lamb_um*10000, dfi['lambda_ang'], dfi['flux']/np.std(dfi['flux'])))
         # else:
@@ -397,26 +455,42 @@ def multiInterp1(x, xp, fp):
 
 # function to integrate fluxes convolved with filters and return all 102 values
 @njit(fastmath=True)
-def f_convolve_filter(wl, flux, filter_info=None):
-    if filter_info != None:
-        Nfilt, filt_length, filt_norm, filt_all_lams, filt_all_lams_reshaped = filter_info
-        # flux_conv = np.zeros(102)
-        # for i in range(102):
-        #     lb = filtlams[i]
-        #     f_interp = np.interp(lb, wl, flux)
-        #     fnu_i = np.trapz(f_interp*ftrans, lb)/filt_norm[i]
-        #     flux_conv[i] = fnu_i
-
-        # manually calculate area below curves
-        f_interps = np.interp(filt_all_lams, wl, flux).reshape((Nfilt, filt_length))
-        # flux_conv = np.sum(f_interps, axis=1) / filt_length   # Numba doesn't support np.mean with arguments
-        df_interps = np.diff(f_interps)
-        dl = np.diff(filt_all_lams_reshaped)
-        f_ints = dl * (0.5*df_interps + f_interps[:,:-1])
-        flux_conv = np.sum(f_ints, axis=1)/filt_norm
+def f_convolve_filter(wl, flux, filters=None):
+    if filters != None:
+        Nf = len(filters)
+        flux_conv = np.zeros(Nf)
+        for i in range(Nf):
+            lb = filters[i][0]
+            ftrans = filters[i][1]
+            f_interp = np.interp(lb, wl, flux)
+            fnu_i = np.trapezoid(f_interp*ftrans, lb)
+            flux_conv[i] = fnu_i
     else:
-        flux_conv = flux
+        flux_conv = flux    # TODO remove this part
     return flux_conv
+
+# # function to integrate fluxes convolved with filters and return all 102 values, old
+# @njit(fastmath=True)
+# def f_convolve_filter(wl, flux, filters=None):
+#     if filters != None:
+#         Nfilt, filt_length, filt_norm, filt_all_lams, filt_all_lams_reshaped = filters
+#         # flux_conv = np.zeros(102)
+#         # for i in range(102):
+#         #     lb = filtlams[i]
+#         #     f_interp = np.interp(lb, wl, flux)
+#         #     fnu_i = np.trapz(f_interp*ftrans, lb)/filt_norm[i]
+#         #     flux_conv[i] = fnu_i
+
+#         # manually calculate area below curves
+#         f_interps = np.interp(filt_all_lams, wl, flux).reshape((Nfilt, filt_length))
+#         # flux_conv = np.sum(f_interps, axis=1) / filt_length   # Numba doesn't support np.mean with arguments
+#         df_interps = np.diff(f_interps)
+#         dl = np.diff(filt_all_lams_reshaped)
+#         f_ints = dl * (0.5*df_interps + f_interps[:,:-1])
+#         flux_conv = np.sum(f_ints, axis=1)/filt_norm
+#     else:
+#         flux_conv = flux
+#     return flux_conv
 
 
 # utility function to apply a redshift to spectral dictionary
@@ -431,13 +505,13 @@ def apply_redshift(D,z,lamb_in,lamb_out):
 
 # apply redshift function with additional option to convolve with filters
 @jit(nopython=True, fastmath=True)
-def apply_redshift1(D,z,lamb_in,lamb_out, filter_info=None, conv=False):
+def apply_redshift1(D,z,lamb_in,lamb_out, filters=None, conv=False):
     # interpolate and redshift each spectrum in the dictionary
     lamb_inx1pz = lamb_in * (1+z)
-    if conv and filter_info != None:
+    if conv and (filters is not None):
         D_out = np.zeros((D.shape[0],len(lamb_out)))
         for i in range(D.shape[0]):
-            D_conv = f_convolve_filter(lamb_inx1pz, D[i,:], filter_info)
+            D_conv = f_convolve_filter(lamb_inx1pz, D[i,:], filters)
             D_out[i,:] = D_conv
         # else:
         #     D_out[i,:] = np.interp(lamb_out,lamb_inx1pz,D[i,:])
@@ -447,11 +521,11 @@ def apply_redshift1(D,z,lamb_in,lamb_out, filter_info=None, conv=False):
 
 # apply redshift to all zgrid points and output 3-d array
 @njit(fastmath=True)
-def apply_redshift_all(D, zgrid, lamb_in, lamb_out, filter_info=None, conv=False):
+def apply_redshift_all(D, zgrid, lamb_in, lamb_out, filters=None, conv=False):
     nz = zgrid.shape[0]
     D_all = np.zeros((nz, D.shape[0], lamb_out.shape[0]))
     for i in range(nz):
-        D_thisz = apply_redshift1(D, zgrid[i], lamb_in, lamb_out, filter_info=filter_info, conv=conv)
+        D_thisz = apply_redshift1(D, zgrid[i], lamb_in, lamb_out, filters=filters, conv=conv)
         D_all[i] = D_thisz
     return D_all
 
@@ -459,9 +533,9 @@ def apply_redshift_all(D, zgrid, lamb_in, lamb_out, filter_info=None, conv=False
     
 # Fit data with dictionary across the whole redshift grid
 @jit(nopython=True, fastmath=True)
-def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, zinput=False, filter_info=None,
-                larslasso=False, alpha=0, alpha_sig=0.0, lars_positive=False, center_Xy=False, unit_X=True, unit_y=True, 
-                path=False, best_cp=False, max_feature=None, alpha_ns_scaling=False, active_ols=False,
+def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, zinput=False, filters=None,
+                larslasso=False, alpha=0, alpha_sig=0.0, positive=False, center_Xy=False, unit_X=True, unit_y=True, 
+                path=False, best_estimator=None, max_feature=None, alpha_ns_scaling=False, active_ols=False,
                 dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, error=False, probline=0.317/2, 
                 conv=False, conv_finegrid=False, local_finegrid=False, local_finegrid_size=0.03, local_finegrid_dz=0.001):
     # Check if D_rest is necessary but not given
@@ -477,8 +551,8 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         zinput_float = np.float64(zinput)
         zgrid = np.array([zinput_float])
         local_finegrid = False
-        zbest0 = zinput_float
-        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filter_info=filter_info, conv=conv)
+        zpeak0 = zinput_float
+        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
         D_allz = D_zinput.reshape((1, D_zinput.shape[0], D_zinput.shape[1]))
     
     else:
@@ -507,15 +581,15 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
             zgrid = np.hstack((zgrid_copy, np.array([zinput_float]))) # input of hstack in numba have to be all arrays
             idx_zgrid = np.argsort(zgrid)
             zgrid = zgrid[idx_zgrid]
-            zbest0 = zinput_float
-            idx_zbest0 = np.argmax(idx_zgrid)
+            zpeak0 = zinput_float
+            idx_zpeak0 = np.argmax(idx_zgrid)
 
         # check if D_allz is given
         if D_allz is None:
-            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filter_info=filter_info, conv=conv)
+            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
         elif zinput:
             # if D_allz and zinput are provided, create a new D_allz array and insert D_zinput to the correct location
-            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filter_info=filter_info, conv=conv)
+            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
             D_allz_copy = D_allz.copy()
             D_allz = np.zeros((D_allz_copy.shape[0]+1, D_allz_copy.shape[1], D_allz_copy.shape[2]), dtype=D_allz_copy.dtype)
             D_allz[:D_allz_copy.shape[0]] = D_allz_copy
@@ -539,8 +613,8 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
             # D_thisz = np.ascontiguousarray(D_thisz)
             # spec_data = np.ascontiguousarray(spec_data)
             # err_data = np.ascontiguousarray(err_data)
-            coefs, b, model, cost = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
-                                                center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_cp=best_cp, 
+            coefs, b, model, cost = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+                                                center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
                                                 max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
                                                 max_feature=max_feature, active_ols=active_ols)
         coefs_zgrid[i] = coefs
@@ -548,19 +622,19 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         chi2_zgrid[i] = cost
 
     # if not zinput:
-    idx_zbest0 = np.argmin(chi2_zgrid)
-    zbest0 = zgrid[idx_zbest0]
+    idx_zpeak0 = np.argmin(chi2_zgrid)
+    zpeak0 = zgrid[idx_zpeak0]
 
     if not local_finegrid:
-        idx_zbest1 = idx_zbest0
-        zbest1 = zbest0
+        idx_zpeak1 = idx_zpeak0
+        zpeak1 = zpeak0
     # local fine grid
     else:
-        z_localmax = min((zbest0+local_finegrid_size, zmax))
-        z_localmin = max((zbest0-local_finegrid_size, zmin))
+        z_localmax = min((zpeak0+local_finegrid_size, zmax))
+        z_localmin = max((zpeak0-local_finegrid_size, zmin))
         zgrid_local = np.arange(z_localmin, z_localmax, local_finegrid_dz)
         local_length = zgrid_local.shape[0]
-        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filter_info=filter_info, conv=conv_finegrid)
+        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filters=filters, conv=conv_finegrid)
         coefs_zgrid_local = np.zeros((local_length, D_allz.shape[1]))
         bs_zgrid_local = np.zeros_like(zgrid_local)
         chi2_zgrid_local = np.zeros_like(zgrid_local) + np.inf
@@ -574,8 +648,8 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
             else:
                 # spec_data = np.ascontiguousarray(spec_data)
                 # err_data = np.ascontiguousarray(err_data)
-                coefs, b, model, cost = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
-                                                    center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_cp=best_cp,
+                coefs, b, model, cost = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+                                                    center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
                                                     max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
                                                     max_feature=max_feature, active_ols=active_ols)
             coefs_zgrid_local[j] = coefs
@@ -605,29 +679,39 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         D_allz = D_allz[idx_zgrid_new]
 
         if zinput:
-            idx_zbest1 = np.where(idx_zgrid_new==idx_zbest0)[0][0]  # figure where zinput is
-            zbest1 = zinput_float
+            idx_zpeak1 = np.where(idx_zgrid_new==idx_zpeak0)[0][0]  # figure where zinput is
+            zpeak1 = zinput_float
         else:
-            idx_zbest1 = np.argmin(chi2_zgrid)
-            zbest1 = zgrid[idx_zbest1]
+            idx_zpeak1 = np.argmin(chi2_zgrid)
+            zpeak1 = zgrid[idx_zpeak1]
 
-    # Now we have zbest1, idx_zbest1, zgrid, coefs_zgrid, chi2_zgrid
+    # Now we have zpeak1, idx_zpeak1, zgrid, coefs_zgrid, chi2_zgrid
     if not error:
-        zlower = zbest1
-        zupper = zbest1
+        zlower = zpeak1
+        zupper = zpeak1
     else:
         zlower, zupper = error_estimation(zgrid=zgrid, chi2=chi2_zgrid, probline=probline)
-        # if zlower > zbest1:
-        #     zlower = zbest1
-        # if zupper < zbest1:
-        #     zupper = zbest1
-    D_zbest = D_allz[idx_zbest1]
-    coef_zbest = coefs_zgrid[idx_zbest1]
-    b_zbest = np.array(bs_zgrid[idx_zbest1])
-    # chi2_zbest = chi2_zgrid[idx_zbest1]
-    model_zbest = D_zbest.T @ coef_zbest
+        # if zlower > zpeak1:
+        #     zlower = zpeak1
+        # if zupper < zpeak1:
+        #     zupper = zpeak1
+    D_zpeak = D_allz[idx_zpeak1]
+    coef_zpeak = coefs_zgrid[idx_zpeak1]
+    b_zpeak = np.array(bs_zgrid[idx_zpeak1])
+    # chi2_zpeak = chi2_zgrid[idx_zpeak1]
+    model_zpeak = D_zpeak.T @ coef_zpeak
 
-    return zbest1, zlower, zupper, coef_zbest, b_zbest, model_zbest, zgrid, chi2_zgrid
+    # calculate averaged z_best
+    if zinput:
+        zbest = zinput_float
+    else:
+        min_chi2 = np.min(chi2_zgrid)
+        likelihood = np.exp(-(chi2_zgrid-min_chi2)/2)
+        area = np.trapezoid(likelihood, zgrid)
+        # likelihood = likelihood/area
+        zbest = np.trapezoid((likelihood*zgrid), zgrid)/area
+
+    return zpeak1, zbest, zlower, zupper, coef_zpeak, b_zpeak, model_zpeak, zgrid, chi2_zgrid
 
 
 @njit(fastmath=True)
@@ -645,21 +729,28 @@ def error_estimation(zgrid, chi2, probline=0.317/2):
     idx_lower1 = np.argwhere((cum_d_area_L - probline)>0)[0][0] - 1
     idx_lower2 = idx_lower1 + 1
     zgrid_area_L = zgrid[1:]    # cumulative area correspond to zgrid[1:]
-    zlower1 = zgrid_area_L[idx_lower1]
-    zlower2 = zgrid_area_L[idx_lower2]
-    dz_lower = zlower2 - zlower1
-    factorL = (probline - cum_d_area_L[idx_lower1]) / (cum_d_area_L[idx_lower2] - cum_d_area_L[idx_lower1])
-    zlower = zlower1 + factorL * dz_lower
+    if idx_lower1 == -1:
+        zlower = 0.0
+    else:
+        zlower1 = zgrid_area_L[idx_lower1]
+        zlower2 = zgrid_area_L[idx_lower2]
+        dz_lower = zlower2 - zlower1
+        factorL = (probline - cum_d_area_L[idx_lower1]) / (cum_d_area_L[idx_lower2] - cum_d_area_L[idx_lower1])
+        zlower = zlower1 + factorL * dz_lower
+
 
     cum_d_area_R = np.cumsum(d_area[::-1])    # cumulative sum of area from right
     idx_upper1 = np.argwhere((cum_d_area_R - probline)>0)[0][0] - 1
     idx_upper2 = idx_upper1 + 1
-    zgrid_area_R = zgrid[:-1][::-1]     # start counting from 2nd to last of zgrid, then reverse
-    zupper1 = zgrid_area_R[idx_upper1]
-    zupper2 = zgrid_area_R[idx_upper2]
-    dz_upper = zupper2 - zupper1
-    factorR = (probline - cum_d_area_R[idx_upper1]) / (cum_d_area_R[idx_upper2] - cum_d_area_R[idx_upper1])
-    zupper = zupper1 + factorR * dz_upper
+    if idx_upper1 == -1:
+        zupper = zgrid[-1]
+    else:
+        zgrid_area_R = zgrid[:-1][::-1]     # start counting from 2nd to last of zgrid, then reverse
+        zupper1 = zgrid_area_R[idx_upper1]
+        zupper2 = zgrid_area_R[idx_upper2]
+        dz_upper = zupper2 - zupper1
+        factorR = (probline - cum_d_area_R[idx_upper1]) / (cum_d_area_R[idx_upper2] - cum_d_area_R[idx_upper1])
+        zupper = zupper1 + factorR * dz_upper
 
     return zlower, zupper
 
@@ -682,7 +773,7 @@ def ols(X, y):
 
 @jit(nopython=True, fastmath=True)
 def fit_model_larslasso(D_thisz, spec_data, err_data, alpha=0.0, alpha_sig=0.0, positive=False,  
-                        center_Xy=False, unit_X=True, unit_y=True, path=False, best_cp=False,
+                        center_Xy=False, unit_X=True, unit_y=True, path=False, best_estimator=None,
                         max_iter=200, decimals=10, max_feature=None, alpha_ns_scaling=False, active_ols=False):
     X = (D_thisz/err_data).T    # currently D_thisz is X.T in usual LARSlasso convention
     X = np.ascontiguousarray(X)
@@ -705,21 +796,30 @@ def fit_model_larslasso(D_thisz, spec_data, err_data, alpha=0.0, alpha_sig=0.0, 
     else:
         ynorm_inside = ynorm
     d_corr = Xnorms_inside * 1.0 * ynorm_inside/ynorm
-    alpha_in = alpha + alpha_sig*d_corr
-    coefs, b, _, _, _= larslasso(X, y, alpha=alpha_in, positive=positive, 
-                        center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_cp=best_cp,
+    
+    alpha_in = alpha_sig*d_corr
+    alpha_in[alpha_in<alpha] = alpha
+
+    coefs, b, _, alpha_path, est_path = larslasso(X, y, alpha=alpha_in, positive=positive, 
+                        center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,
                         max_iter=max_iter, decimals=decimals, max_feature=max_feature, 
                         alpha_ns_scaling=alpha_ns_scaling, active_ols=active_ols)
     coefs = np.ascontiguousarray(coefs)
     
     ymodel = X @ coefs + b
     model = ymodel * err_data
-    cost = np.sum((y - ymodel)**2) + 2 * (ynorm/ynorm_inside) * (np.sum(np.fabs(alpha_in*Xnorms/Xnorms_inside*coefs)))
+    # TESTING
+    if best_estimator is not None:
+        alpha_out = np.full_like(alpha_in, alpha_path[np.argmin(est_path)])
+    else:
+        alpha_out = alpha_in
+    # alpha_out = alpha_in
+    cost = np.sum((y - ymodel)**2) + 2 * (ynorm/ynorm_inside) * (np.sum(np.fabs(alpha_out*Xnorms/Xnorms_inside*coefs)))
     # cost = np.sum((y - ymodel)**2)
     return coefs, b, model, cost
 
 @jit(nopython=True, fastmath=True)
-def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, unit_y=True, path=False, best_cp=False,
+def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, unit_y=True, path=False, best_estimator=None,
                 max_iter=200, decimals=10, alpha_ns_scaling=False, max_feature=None, active_ols=False):
     '''
     Return LARS-lasso fitting coefficients. X is the atoms array, y is the target vector.
@@ -752,9 +852,11 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
     path : bool, default=False
         If True, return coef, coef_path and alphas
 
-    best_cp : bool, default=False
-        If True, ignore iput alpha and path, output the best Cp value fit
-        Noted that alpha will be set to 0.0 and the full LARS-lasso path will be explore, which would slightly slow down the code
+    best_estimator : str, default=None
+        Use best estimator fit as output, can be 'Cp' or 'BIC'
+
+    best_bic : bool, default=False
+        If True, output the best fit based on BIC before early stopping due to input alpha. Has priority over best_cp
         
     max_iter : int, default=200
         Max allowed iteration for the LARS-lasso algorithm
@@ -794,8 +896,9 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
     nf = X.shape[1]
     ns = X.shape[0]
     if max_feature is None:
-        max_feature = nf    
-    if best_cp:
+        max_feature = nf
+
+    if best_estimator is not None:
         path = True
 
     Xnorms = np.ones(nf)
@@ -823,7 +926,8 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
     alphas = np.array([0.0])
     prev_alphas = np.array([0.0])
     coef_path = coef.copy()[None,:]
-    alpha_path = alphas.copy()
+    # alpha_path = alphas.copy()
+    alpha_path = np.empty(shape=0)
 
     # check if input alpha is a single float number
     # set alpha_array for each feature, even if they are all the same
@@ -869,18 +973,20 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
         if alphas < alpha_array[c_idx] and n_iter > 0:
             # print('End early')
             if not active_ols:
-                    ss = (prev_alphas - alpha_array) / (prev_alphas - alphas)
-                    coef = prev_coef + ss * (coef - prev_coef)
-                    alphas[0] = alpha_array[c_idx]
+                ss = (prev_alphas - alpha_array) / (prev_alphas - alphas)
+                coef = prev_coef + ss * (coef - prev_coef)
+                alphas[0] = alpha_array[c_idx]
             else:
                 coef_A = ols(X[:, idx_A_tf], y)
                 coef[idx_A_tf] = coef_A
             if path:
                 # coef_path = np.vstack((coef_path, coef))
-                coef_path_copy = coef_path.copy()
-                coef_path = np.zeros((coef_path_copy.shape[0]+1, coef_path_copy.shape[1]))
-                coef_path[:-1] = coef_path_copy
+                # coef_path_copy = coef_path.copy()
+                # coef_path = np.zeros((coef_path_copy.shape[0]+1, coef_path_copy.shape[1]))
+                # coef_path[:-1] = coef_path_copy
+                # coef_path[-1] = coef
                 coef_path[-1] = coef
+                alpha_path[-1] = alpha_array[c_idx]
                 # coef_path = np.append(coef_path, coef).reshape((n_iter+2, nf))
             # else:
                 # coef_path = coef_path[None,:]   # add an axis so that dimension and type is compatible with coef_path when path=True
@@ -956,15 +1062,21 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
             idx_A_tf[idx_drop] = False
             idx_rest_tf[idx_drop] = True
 
-    if best_cp:
-        cp_path = np.zeros_like(alpha_path)
-        for i in range(cp_path.shape[0]):
+    if best_estimator:
+        est_path = np.zeros_like(alpha_path)
+        for i in range(est_path.shape[0]):
             coef_i = coef_path[i]
             coef_i = np.ascontiguousarray(coef_i)
-            cp_path[i] = np.sum((y - X @ coef_i)**2/(1.0/ynorm)**2) - ns + 2*i
-        best_cp_idx = np.argmin(cp_path)
-        coef = coef_path[best_cp_idx]
+            k = i   # LARS
+            # k = np.sum(coef_i!=0)
+            if best_estimator == 'Cp':
+                est_path[i] = np.sum((y - X @ coef_i)**2/(1.0/ynorm)**2) - ns + 2*k
+            elif best_estimator == 'BIC':
+                est_path[i] = np.sum((y - X @ coef_i)**2/(1.0/ynorm)**2) + np.log(ns) * k
 
+        best_est_idx = np.argmin(est_path[1:])+1    # in some case the 1st fit was bad, best_est will choose the coefs=0 case
+        coef = coef_path[best_est_idx]
+        # estimator_path = est_path
 
     coef = np.around(coef, decimals=decimals)
     # Calculate the intercept and recover the coef & b for original X and y
@@ -977,12 +1089,15 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
     # model = X @ coef + b
 
     # return coef, b, coef_path, alpha_path
-    return coef, b, coef_path, alpha_path, cp_path  # TEMP
+    return coef, b, coef_path, alpha_path, est_path  # TEMP
     # return coef, b
     # return coef
 
 
 def nmad_eta(zs, zp, eta_method=0):
+    nanmask = np.isnan(zp)
+    zp = zp[~nanmask]
+    zs = zs[~nanmask]
     dz = zp - zs
     dz_1pz = dz/(1+zs)
     nmad = 1.48 * np.median(np.abs((dz - np.median(dz))/(1+zs)))
@@ -991,15 +1106,17 @@ def nmad_eta(zs, zp, eta_method=0):
     elif eta_method == 1:
         std_eta = np.std(dz_1pz)
         eta = np.mean(np.abs(dz_1pz) > 3*std_eta)
+    elif eta_method == 2:
+        eta = np.mean(np.abs(dz_1pz) > 3*nmad)
     return nmad, eta
 
 
 
 
 # Diagnostic functions that works just as fit_zgrid but output all coefs instead of just best fit coefficient
-def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, zinput=False, filter_info=None,
+def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, zinput=False, filters=None,
                 larslasso=False, alpha=0, alpha_sig=0.0, lars_positive=False, center_Xy=False, unit_X=True, unit_y=True,
-                path=False, best_cp=False, max_feature=None, alpha_ns_scaling=False, active_ols=False,
+                path=False, best_estimator=None, max_feature=None, alpha_ns_scaling=False, active_ols=False,
                 dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, error=False, probline=0.317/2, 
                 conv=False, conv_finegrid=False, local_finegrid=False, local_finegrid_size=0.03, local_finegrid_dz=0.001):
     # Check if D_rest is necessary but not given
@@ -1015,8 +1132,8 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         zinput_float = np.float64(zinput)
         zgrid = np.array([zinput_float])
         local_finegrid = False
-        zbest0 = zinput_float
-        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filter_info=filter_info, conv=conv)
+        zpeak0 = zinput_float
+        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
         D_allz = D_zinput.reshape((1, D_zinput.shape[0], D_zinput.shape[1]))
     
     else:
@@ -1045,15 +1162,15 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
             zgrid = np.hstack((zgrid_copy, np.array([zinput_float]))) # input of hstack in numba have to be all arrays
             idx_zgrid = np.argsort(zgrid)
             zgrid = zgrid[idx_zgrid]
-            zbest0 = zinput_float
-            idx_zbest0 = np.argmax(idx_zgrid)
+            zpeak0 = zinput_float
+            idx_zpeak0 = np.argmax(idx_zgrid)
 
         # check if D_allz is given
         if D_allz is None:
-            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filter_info=filter_info, conv=conv)
+            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
         elif zinput:
             # if D_allz and zinput are provided, create a new D_allz array and insert D_zinput to the correct location
-            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filter_info=filter_info, conv=conv)
+            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
             D_allz_copy = D_allz.copy()
             D_allz = np.zeros((D_allz_copy.shape[0]+1, D_allz_copy.shape[1], D_allz_copy.shape[2]), dtype=D_allz_copy.dtype)
             D_allz[:D_allz_copy.shape[0]] = D_allz_copy
@@ -1075,7 +1192,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
             cost = np.sum((model - spec_data)**2/err_data**2)
         else:
             coefs, b, model, cost = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
-                                                center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_cp=best_cp, 
+                                                center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,  
                                                 max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
                                                 max_feature=max_feature, active_ols=active_ols)
         coefs_zgrid[i] = coefs
@@ -1083,19 +1200,19 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         chi2_zgrid[i] = cost
 
     # if not zinput:
-    idx_zbest0 = np.argmin(chi2_zgrid)
-    zbest0 = zgrid[idx_zbest0]
+    idx_zpeak0 = np.argmin(chi2_zgrid)
+    zpeak0 = zgrid[idx_zpeak0]
 
     if not local_finegrid:
-        idx_zbest1 = idx_zbest0
-        zbest1 = zbest0
+        idx_zpeak1 = idx_zpeak0
+        zpeak1 = zpeak0
     # local fine grid
     else:
-        z_localmax = min((zbest0+local_finegrid_size, zmax))
-        z_localmin = max((zbest0-local_finegrid_size, zmin))
+        z_localmax = min((zpeak0+local_finegrid_size, zmax))
+        z_localmin = max((zpeak0-local_finegrid_size, zmin))
         zgrid_local = np.arange(z_localmin, z_localmax, local_finegrid_dz)
         local_length = zgrid_local.shape[0]
-        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filter_info=filter_info, conv=conv_finegrid)
+        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filters=filters, conv=conv_finegrid)
         coefs_zgrid_local = np.zeros((local_length, D_allz.shape[1]))
         bs_zgrid_local = np.zeros_like(zgrid_local)
         chi2_zgrid_local = np.zeros_like(zgrid_local) + np.inf
@@ -1108,7 +1225,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
                 cost = np.sum((model - spec_data)**2/err_data**2)
             else:
                 coefs, b, model, cost = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
-                                                    center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_cp=best_cp, 
+                                                    center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,  
                                                     max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
                                                     max_feature=max_feature, active_ols=active_ols)
             coefs_zgrid_local[j] = coefs
@@ -1138,26 +1255,36 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         D_allz = D_allz[idx_zgrid_new]
 
         if zinput:
-            idx_zbest1 = np.where(idx_zgrid_new==idx_zbest0)[0][0]  # figure where zinput is
-            zbest1 = zinput_float
+            idx_zpeak1 = np.where(idx_zgrid_new==idx_zpeak0)[0][0]  # figure where zinput is
+            zpeak1 = zinput_float
         else:
-            idx_zbest1 = np.argmin(chi2_zgrid)
-            zbest1 = zgrid[idx_zbest1]
+            idx_zpeak1 = np.argmin(chi2_zgrid)
+            zpeak1 = zgrid[idx_zpeak1]
 
-    # Now we have zbest1, idx_zbest1, zgrid, coefs_zgrid, chi2_zgrid
+    # Now we have zpeak1, idx_zpeak1, zgrid, coefs_zgrid, chi2_zgrid
     if not error:
-        zlower = zbest1
-        zupper = zbest1
+        zlower = zpeak1
+        zupper = zpeak1
     else:
         zlower, zupper = error_estimation(zgrid=zgrid, chi2=chi2_zgrid, probline=probline)
 
-    D_zbest = D_allz[idx_zbest1]
-    coef_zbest = coefs_zgrid[idx_zbest1]
-    b_zbest = bs_zgrid[idx_zbest1]
-    # chi2_zbest = chi2_zgrid[idx_zbest1]
-    model_zbest = D_zbest.T @ coef_zbest
+    D_zpeak = D_allz[idx_zpeak1]
+    coef_zpeak = coefs_zgrid[idx_zpeak1]
+    b_zpeak = bs_zgrid[idx_zpeak1]
+    # chi2_zpeak = chi2_zgrid[idx_zpeak1]
+    model_zpeak = D_zpeak.T @ coef_zpeak
 
-    return zbest1, zlower, zupper, coefs_zgrid, b_zbest, model_zbest, zgrid, chi2_zgrid
+    # calculate averaged z_best
+    if zinput:
+        zbest = zinput_float
+    else:
+        min_chi2 = np.min(chi2_zgrid)
+        likelihood = np.exp(-(chi2_zgrid-min_chi2)/2)
+        area = np.trapezoid(likelihood, zgrid)
+        # likelihood = likelihood/area
+        zbest = np.trapezoid((likelihood*zgrid), zgrid)/area
+
+    return zpeak1, zbest, zlower, zupper, coefs_zgrid, b_zpeak, model_zpeak, zgrid, chi2_zgrid
 
 
 
@@ -1316,7 +1443,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 # # outdated
 # # Adaptive grid search with increasing step size toward higher z
 # @jit(nopython=True, fastmath=True)
-# def fit_zgrid1(lamb_data, spec_data, err_data, lamb_D, D, zgrid, zinput=False, filter_info=None,
+# def fit_zgrid1(lamb_data, spec_data, err_data, lamb_D, D, zgrid, zinput=False, filters=None,
 #                  larslasso=False, alpha=0, alpha_sig=0.0, lars_positive=False, alpha_ns_scaling=False, LARSlasso_alpha_selection_only=False,
 #                  zgrid_searchsize=0.02, zgrid_errsearchsize=0.03, z_fitting_max=3.0, probline=0.317/2, 
 #                  conv_first=False, conv_last=False, error=False, local_finegrid=True):
@@ -1329,7 +1456,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         # loop over trial redshifts
 #         for k in range(ztrial0.shape[0]):
 #             # make this redshifted template
-#             D_thisz = apply_redshift1(D,ztrial0[k],lamb_D,lamb_data, filter_info, conv=conv_first)
+#             D_thisz = apply_redshift1(D,ztrial0[k],lamb_D,lamb_data, filters, conv=conv_first)
 
 #             if not larslasso:   # use OLS fitting
 #                 params, model = fit_models_ols(D_thisz, spec_data, err_data)
@@ -1363,7 +1490,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #             # loop over trial redshifts
 #             for k in range(ztrial.shape[0]):
 #                 # make this redshifted template
-#                 D_thisz = apply_redshift1(D,ztrial[k],lamb_D,lamb_data, filter_info, conv=conv_last)
+#                 D_thisz = apply_redshift1(D,ztrial[k],lamb_D,lamb_data, filters, conv=conv_last)
 
 #                 if not larslasso:   # use OLS fitting
 #                     params, model = fit_models_ols(D_thisz, spec_data, err_data)
@@ -1383,7 +1510,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         error = False
 #     # redo the fit at this redshift
 #     # make this redshifted template
-#     D_thisz = apply_redshift1(D,z,lamb_D,lamb_data, filter_info, conv=conv_last)
+#     D_thisz = apply_redshift1(D,z,lamb_D,lamb_data, filters, conv=conv_last)
 
 #     if not larslasso:   # use OLS fitting
 #         params, model = fit_models_ols(D_thisz, spec_data, err_data)
@@ -1431,7 +1558,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         residual_vs_z_low = np.inf + np.zeros_like(ztrial1_low)
 #         for k in range(ztrial1_low.shape[0]):
 #             # make this redshifted template
-#             D_thisz = apply_redshift1(D,ztrial1_low[k],lamb_D,lamb_data, filter_info, conv=conv_last)
+#             D_thisz = apply_redshift1(D,ztrial1_low[k],lamb_D,lamb_data, filters, conv=conv_last)
 
 #             if not larslasso:   # use OLS fitting
 #                 params, model = fit_models_ols(D_thisz, spec_data, err_data)
@@ -1452,7 +1579,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         residual_vs_z_high = np.inf + np.zeros_like(ztrial1_high)
 #         for k in range(ztrial1_high.shape[0]):
 #             # make this redshifted template
-#             D_thisz = apply_redshift1(D,ztrial1_high[k],lamb_D,lamb_data, filter_info, conv=conv_last)
+#             D_thisz = apply_redshift1(D,ztrial1_high[k],lamb_D,lamb_data, filters, conv=conv_last)
 
 #             if not larslasso:   # use OLS fitting
 #                 params, model = fit_models_ols(D_thisz, spec_data, err_data)
@@ -1493,7 +1620,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 
 
 # # residue and likelihood plots for an individual galaxy
-# def igplots(ig, lamb_obs, spec_obs, spec_obs_original, err_obs, lamb_rest, D_rest, zgrid, filter_info, ztrue, figsize=(10,12)):
+# def igplots(ig, lamb_obs, spec_obs, spec_obs_original, err_obs, lamb_rest, D_rest, zgrid, filters, ztrue, figsize=(10,12)):
 #     fig, ax = plt.subplots(4,2, figsize=figsize, num=0)
 
 #     # delete ax[0,1]
@@ -1521,7 +1648,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         # full grid
 #         t1 = time.time()
 #         z,zl,zh,params,model,ztrials,residues = fit_zgrid(lamb_obs, spec_obs[ig], err_obs[ig], lamb_rest, D_rest, 
-#                                                             full_zgrid, filter_info, conv_first=conv, conv_last=conv, error=True, local_finegrid=False)
+#                                                             full_zgrid, filters, conv_first=conv, conv_last=conv, error=True, local_finegrid=False)
 #         if i == 0:
 #             model0 = model.copy()
 
@@ -1560,7 +1687,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         # optimized zgrid
 #         t1 = time.time()
 #         z,zl,zh,params,model,ztrials,residues = fit_zgrid(lamb_obs, spec_obs[ig], err_obs[ig], lamb_rest, D_rest, 
-#                                                             zgrid, filter_info, conv_first=conv, conv_last=conv, error=True)
+#                                                             zgrid, filters, conv_first=conv, conv_last=conv, error=True)
 #         t2 = time.time()
 
 #         for j in range(len(ztrials)):
@@ -1596,7 +1723,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 
 # # residue and likelihood plots for an individual galaxy
 # # this one doesn't output convolved plots
-# def igplots2(ig, lamb_obs, spec_obs, spec_obs_original, err_obs, lamb_rest, D_rest, zgrid, filter_info, ztrue, figsize=(10,12)):
+# def igplots2(ig, lamb_obs, spec_obs, spec_obs_original, err_obs, lamb_rest, D_rest, zgrid, filters, ztrue, figsize=(10,12)):
 #     fig, ax = plt.subplots(3,2, figsize=figsize, num=0)
 
 #     # delete ax[0,1]
@@ -1631,7 +1758,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 #         # full grid
 #         t1 = time.time()
 #         z,zl,zh,params,model,ztrials,residues = fit_zgrid(lamb_obs, spec_obs[ig], err_obs[ig], lamb_rest, D_rest, 
-#                                                             grid, filter_info, error=True, local_finegrid=local_finegrid)
+#                                                             grid, filters, error=True, local_finegrid=local_finegrid)
 #         if i == 0:
 #             model0 = model.copy()
 
