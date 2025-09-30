@@ -81,6 +81,7 @@ class Configs:
         self.larslasso_alpha_scaling = self.LARSlasso['alpha_scaling']
 
         # Fitting configurations
+        self.fitting = self.Fitting['fitting']
         self.probline = self.Fitting['probline']
         self.fit_training_catalog = self.Fitting['fit_training_catalog']
         self.fit_initial_dicts = self.Fitting['fit_initial_dicts']

@@ -121,6 +121,7 @@ if __name__ == "__main__":
     unit_y = config.unit_y
     larslasso_alpha_scaling = config.larslasso_alpha_scaling
     # Fitting configurations
+    fitting = config.fitting
     probline = config.probline
     fit_training_catalog = config.fit_training_catalog
     fit_initial_dicts = config.fit_initial_dicts
@@ -271,7 +272,8 @@ if __name__ == "__main__":
     # print(f"Algorithm = {algorithm}")
     if training:
         print(f"Training Catalog:\t{training_catalog} ({Ngal} sources)")
-    print(f"Validation Catalog:\t{validation_catalog} ({Ndat_validation} sources)")
+    if fitting:
+        print(f"Validation Catalog:\t{validation_catalog} ({Ndat_validation} sources)")
     if dict_read_from_file:
         print(f"Dictionaries:\t\t{dict_read_from_file}")
     else:
@@ -319,12 +321,13 @@ if __name__ == "__main__":
         if testing_zgrid:
             print('Testing Zgrid: On')
     else:
-        if larslasso:    
-            print(f"\talpha (fitting) = {larslasso_alpha_fit} + {larslasso_alpha_sigma_fit} sigma")
-            print(f"\tPositive = {larslasso_positive}")
-            print(f"\tcenter_Xy = {center_Xy}")
-            print(f"\tunit_X = {unit_X}")
-            print(f"\tunit_y = {unit_y}")
+        if fitting:
+            if larslasso:    
+                print(f"\talpha (fitting) = {larslasso_alpha_fit} + {larslasso_alpha_sigma_fit} sigma")
+                print(f"\tPositive = {larslasso_positive}")
+                print(f"\tcenter_Xy = {center_Xy}")
+                print(f"\tunit_X = {unit_X}")
+                print(f"\tunit_y = {unit_y}")
             if max_feature:
                 print(f"\tmax_feature = {max_feature}")
             if train_best_estimator is not None:
@@ -336,7 +339,7 @@ if __name__ == "__main__":
     if convolve_filter or last_stage_convolve_filter or fitting_convolve_filter:
         print(f"Convolving filters: 1st stage:{convolve_filter}, 2nd stage:{last_stage_convolve_filter}, fitting:{fitting_convolve_filter}")
 
-    if multiprocess:
+    if multiprocess and fitting:
         print(f'Validation catalog fitting multiprocessing threads: {mp_threads}')
 
     if training:
@@ -559,7 +562,7 @@ if __name__ == "__main__":
 
     # print('')
     # Fitting training catalog if set to True
-    if fit_training_catalog:
+    if fit_training_catalog and fitting:
         # fit all galaxies with final template
         # print('\nTraining Catalog Redshift Estimation')
         zpeak_trained = np.zeros(Ngal)
@@ -606,125 +609,71 @@ if __name__ == "__main__":
         np.savez_compressed(output_dir / 'estimated_redshifts_training.npz', ztrue=ztrue, zpeak=zpeak_trained, zbest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
              zpeak_initial=zpeak_initial, zbest_initial=zbest_initial, coefs=coefs_trained, idx_cali=idx_cali)
 
-    # Read validation catalog for final fitting
-    cat = fx.Catalog(pathfile=validation_catalog, Ndat=Ndat_validation, centering=centering)
-    ztrue = cat.ztrue
-    print('')
+    if fitting:
+        # Read validation catalog for final fitting
+        cat = fx.Catalog(pathfile=validation_catalog, Ndat=Ndat_validation, centering=centering)
+        ztrue = cat.ztrue
+        print('')
 
-    if not multiprocess:
+        if not multiprocess:
 
-        lamb_obs = cat.lamb_obs
-        spec_obs = cat.spec_obs
-        # spec_obs_original = cat.spec_obs_original
-        err_obs = cat.err_obs
-        # desi_flag = cat.desi_flag
-        # snr = cat.snr_i
-        Ngal = len(ztrue)
+            lamb_obs = cat.lamb_obs
+            spec_obs = cat.spec_obs
+            # spec_obs_original = cat.spec_obs_original
+            err_obs = cat.err_obs
+            # desi_flag = cat.desi_flag
+            # snr = cat.snr_i
+            Ngal = len(ztrue)
 
-        zpeak_trained = np.zeros(Ngal)
-        zbest_trained = np.zeros(Ngal)
-        zlow_trained = np.zeros(Ngal)
-        zhigh_trained = np.zeros(Ngal)
-        coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
+            zpeak_trained = np.zeros(Ngal)
+            zbest_trained = np.zeros(Ngal)
+            zlow_trained = np.zeros(Ngal)
+            zhigh_trained = np.zeros(Ngal)
+            coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
 
-        # print('')
-        for i in range(Ngal):
-            # update with number of galaxies processed
-            # print(f"\r\t{i+1}/{Ngal} spectra", end="")
-            print(f"\rValidation Catalog Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
-            # fit this spectrum and obtain the redshift
-            zinput = False
-            zpeak,zbest,zlow,zhigh,coefs,b,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
-                                                    zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
-            # store the redshift
-            zpeak_trained[i] = zpeak
-            zbest_trained[i] = zbest
-            zlow_trained[i] = zlow
-            zhigh_trained[i] = zhigh
-            coefs_trained[i] = coefs
-
-        # for comparison, fit again with original template
-        if training and fit_initial_dicts:
-            zpeak_initial = np.zeros(Ngal)
-            zbest_initial = np.zeros(Ngal)
-            zlow_initial= np.zeros(Ngal)
-            zhigh_initial = np.zeros(Ngal)
-            # print('\nTraining Catalog Untrained Redshift Estimation')
+            # print('')
             for i in range(Ngal):
-                print(f"\rValidation Catalog Untrained Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
+                # update with number of galaxies processed
+                # print(f"\r\t{i+1}/{Ngal} spectra", end="")
+                print(f"\rValidation Catalog Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
                 # fit this spectrum and obtain the redshift
                 zinput = False
-                spec_obs_i = np.ascontiguousarray(spec_obs[i])
-                err_obs_i = np.ascontiguousarray(err_obs[i])
-                zpeak_bi,zbest_bi,zlow_bi,zhigh_bi,coefs_bi,b_bi,model_bi,_,_ = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest_initial,
-                                                    D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
-                zpeak_initial[i] = zpeak_bi
-                zbest_initial[i] = zbest_bi
-                zlow_initial[i] = zlow_bi
-                zhigh_initial[i] = zhigh_bi
-        else:
-            zpeak_initial = None
-            zbest_initial = None
-            zlow_initial= None
-            zhigh_initial = None
+                zpeak,zbest,zlow,zhigh,coefs,b,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
+                                                        zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+                # store the redshift
+                zpeak_trained[i] = zpeak
+                zbest_trained[i] = zbest
+                zlow_trained[i] = zlow
+                zhigh_trained[i] = zhigh
+                coefs_trained[i] = coefs
 
-    else:   # multiprocessing
-
-        segment_Ndat = Ndat_validation // mp_threads
-        parents_mplist = []
-        process_mplist = []
-
-        for mi in range(mp_threads):
-            istart = segment_Ndat * mi
-            if mi == mp_threads-1:
-                Ndat_mi = segment_Ndat + mp_threads
+            # for comparison, fit again with original template
+            if training and fit_initial_dicts:
+                zpeak_initial = np.zeros(Ngal)
+                zbest_initial = np.zeros(Ngal)
+                zlow_initial= np.zeros(Ngal)
+                zhigh_initial = np.zeros(Ngal)
+                # print('\nTraining Catalog Untrained Redshift Estimation')
+                for i in range(Ngal):
+                    print(f"\rValidation Catalog Untrained Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
+                    # fit this spectrum and obtain the redshift
+                    zinput = False
+                    spec_obs_i = np.ascontiguousarray(spec_obs[i])
+                    err_obs_i = np.ascontiguousarray(err_obs[i])
+                    zpeak_bi,zbest_bi,zlow_bi,zhigh_bi,coefs_bi,b_bi,model_bi,_,_ = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest_initial,
+                                                        D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+                    zpeak_initial[i] = zpeak_bi
+                    zbest_initial[i] = zbest_bi
+                    zlow_initial[i] = zlow_bi
+                    zhigh_initial[i] = zhigh_bi
             else:
-                Ndat_mi = segment_Ndat
-            cat_mi = fx.Catalog(pathfile=validation_catalog, Ndat=Ndat_mi, istart=istart, centering=centering)
-            parent_mi, child_mi = mp.Pipe(duplex=False)
-            parents_mplist.append(parent_mi)
+                zpeak_initial = None
+                zbest_initial = None
+                zlow_initial= None
+                zhigh_initial = None
 
-            if mi == 0:
-                verbose = True
-            else:
-                verbose = False
-            p_mi = mp.Process(target=fitting_mp, args=(child_mi, cat_mi, lamb_rest, D_rest, D_allz, 
-                                                        zgrid, filters, fit_zgrid_validation_kws, verbose))
-            process_mplist.append(p_mi)
-            p_mi.start()
-        
-        zpeak_mplist = []
-        zbest_mplist = []
-        zlow_mplist = []
-        zhigh_mplist = []
-        coefs_mplist = []
+        else:   # multiprocessing
 
-        for mi in range(mp_threads):
-            zpeak_mi, zbest_mi, zlow_mi, zhigh_mi, coefs_mi = parents_mplist[mi].recv()
-            zpeak_mplist.append(zpeak_mi)
-            zbest_mplist.append(zbest_mi)
-            zlow_mplist.append(zlow_mi)
-            zhigh_mplist.append(zhigh_mi)
-            coefs_mplist.append(coefs_mi)
-            
-        try:
-            for mi in range(mp_threads):
-                process_mplist[mi].join()
-        except KeyboardInterrupt:
-            for mi in range(mp_threads):
-                process_mplist[mi].terminate()
-            for mi in range(mp_threads):
-                process_mplist[mi].join()
-
-        zpeak_trained = np.hstack(zpeak_mplist)
-        zbest_trained = np.hstack(zbest_mplist)
-        zlow_trained = np.hstack(zlow_mplist)
-        zhigh_trained = np.hstack(zhigh_mplist)
-        coefs_trained = np.vstack(coefs_mplist) # coefs_trained is 2d array
-
-
-        if training and fit_initial_dicts:
-            print('')
             segment_Ndat = Ndat_validation // mp_threads
             parents_mplist = []
             process_mplist = []
@@ -743,7 +692,7 @@ if __name__ == "__main__":
                     verbose = True
                 else:
                     verbose = False
-                p_mi = mp.Process(target=fitting_mp, args=(child_mi, cat_mi, lamb_rest, D_rest_initial, D_allz_initial, 
+                p_mi = mp.Process(target=fitting_mp, args=(child_mi, cat_mi, lamb_rest, D_rest, D_allz, 
                                                             zgrid, filters, fit_zgrid_validation_kws, verbose))
                 process_mplist.append(p_mi)
                 p_mi.start()
@@ -752,6 +701,7 @@ if __name__ == "__main__":
             zbest_mplist = []
             zlow_mplist = []
             zhigh_mplist = []
+            coefs_mplist = []
 
             for mi in range(mp_threads):
                 zpeak_mi, zbest_mi, zlow_mi, zhigh_mi, coefs_mi = parents_mplist[mi].recv()
@@ -759,6 +709,7 @@ if __name__ == "__main__":
                 zbest_mplist.append(zbest_mi)
                 zlow_mplist.append(zlow_mi)
                 zhigh_mplist.append(zhigh_mi)
+                coefs_mplist.append(coefs_mi)
                 
             try:
                 for mi in range(mp_threads):
@@ -769,72 +720,125 @@ if __name__ == "__main__":
                 for mi in range(mp_threads):
                     process_mplist[mi].join()
 
-            zpeak_initial = np.hstack(zpeak_mplist)
-            zbest_initial = np.hstack(zbest_mplist)
-            zlow_initial = np.hstack(zlow_mplist)
-            zhigh_initial = np.hstack(zhigh_mplist)
-
-        else:
-            zpeak_initial = None
-            zbest_initial = None
-            zlow_initial= None
-            zhigh_initial = None
+            zpeak_trained = np.hstack(zpeak_mplist)
+            zbest_trained = np.hstack(zbest_mplist)
+            zlow_trained = np.hstack(zlow_mplist)
+            zhigh_trained = np.hstack(zhigh_mplist)
+            coefs_trained = np.vstack(coefs_mplist) # coefs_trained is 2d array
 
 
-    plotting_training = (training & fit_training_catalog)
+            if training and fit_initial_dicts:
+                print('')
+                segment_Ndat = Ndat_validation // mp_threads
+                parents_mplist = []
+                process_mplist = []
 
-    # Create zphot vs zspec plots
-    makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zpeak_initial, z_trained=zpeak_trained, zmin=zmin, zmax=zmax, catalog='fitting_zpeak', training=plotting_training)
-    makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zbest_initial, z_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='fitting_zbest', training=plotting_training)
+                for mi in range(mp_threads):
+                    istart = segment_Ndat * mi
+                    if mi == mp_threads-1:
+                        Ndat_mi = segment_Ndat + mp_threads
+                    else:
+                        Ndat_mi = segment_Ndat
+                    cat_mi = fx.Catalog(pathfile=validation_catalog, Ndat=Ndat_mi, istart=istart, centering=centering)
+                    parent_mi, child_mi = mp.Pipe(duplex=False)
+                    parents_mplist.append(parent_mi)
 
-    # Create 6 bin uncertainty fraction and zscore plots
-    makefigs.uncertainty_binplots(zs=ztrue, zp=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                   zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', training=plotting_training)
-    makefigs.uncertainty_binplots(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                   zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', training=plotting_training)
-    # Create 6 bin zphot vs zspec hexbin plots
-    makefigs.hexbin_binplot(zs=ztrue, zp=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                   zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', training=plotting_training)
-    makefigs.hexbin_binplot(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                   zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', training=plotting_training)
-    # save estimated redshifts
-    np.savez_compressed(output_dir / 'estimated_redshifts.npz', ztrue=ztrue, zpeak=zpeak_trained, zbest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
-             zpeak_initial=zpeak_initial, zbest_initial=zbest_initial, zlow_initial=zlow_initial, zhigh_initial=zhigh_initial, coefs=coefs_trained, idx_cali=idx_cali)
+                    if mi == 0:
+                        verbose = True
+                    else:
+                        verbose = False
+                    p_mi = mp.Process(target=fitting_mp, args=(child_mi, cat_mi, lamb_rest, D_rest_initial, D_allz_initial, 
+                                                                zgrid, filters, fit_zgrid_validation_kws, verbose))
+                    process_mplist.append(p_mi)
+                    p_mi.start()
+                
+                zpeak_mplist = []
+                zbest_mplist = []
+                zlow_mplist = []
+                zhigh_mplist = []
 
-    # Sparsity plot
-    if larslasso:
-        makefigs.sparsity_report(coefs_trained=coefs_trained, max_feature=max_feature, add_constant=add_constant)
+                for mi in range(mp_threads):
+                    zpeak_mi, zbest_mi, zlow_mi, zhigh_mi, coefs_mi = parents_mplist[mi].recv()
+                    zpeak_mplist.append(zpeak_mi)
+                    zbest_mplist.append(zbest_mi)
+                    zlow_mplist.append(zlow_mi)
+                    zhigh_mplist.append(zhigh_mi)
+                    
+                try:
+                    for mi in range(mp_threads):
+                        process_mplist[mi].join()
+                except KeyboardInterrupt:
+                    for mi in range(mp_threads):
+                        process_mplist[mi].terminate()
+                    for mi in range(mp_threads):
+                        process_mplist[mi].join()
 
-    # select galaxy examples based on redshift error bin
-    idx_examples = []
-    idx_validation = np.arange(Ndat_validation, dtype=int)
-    idx_num_perbin = np.ones(6, dtype=int)
-    sigma_1pz_ranges = [
-            (0, 0.003),
-            (0.003, 0.01),
-            (0.01, 0.03),
-            (0.03, 0.1),
-            (0.1, 0.2),
-            (0.2, 0.5)]
-    sig_trained = (zhigh_trained-zlow_trained)/2
-    z_uncertainty = sig_trained/(1+zbest_trained)
-    for i , (low, high) in enumerate(sigma_1pz_ranges):
-        h = (z_uncertainty<high) & (z_uncertainty>low)
-        idx_in_bin = idx_validation[h]
-        if len(idx_in_bin) >= idx_num_perbin[i]:
-            selected_idx = np.random.choice(idx_in_bin, size=idx_num_perbin[i]).tolist()
-            idx_examples.extend(selected_idx)
-        else:
-            idx_num_perbin[i+1] += 1
+                zpeak_initial = np.hstack(zpeak_mplist)
+                zbest_initial = np.hstack(zbest_mplist)
+                zlow_initial = np.hstack(zlow_mplist)
+                zhigh_initial = np.hstack(zhigh_mplist)
 
-    # Create example SED plots
-    makefigs.example_seds(idx=idx_examples, cat=cat, lamb_rest=lamb_rest, D_rest=D_rest, D_rest_initial=D_rest_initial, \
-                          zgrid=zgrid, filters=filters, validation_fit_kws=fit_zgrid_validation_kws, ztype='zpeak')
-    # makefigs.example_seds(idx=idx_examples, cat=cat, lamb_rest=lamb_rest, D_rest=D_rest, D_rest_initial=D_rest_initial, \
-    #                       zgrid=zgrid, filters=filters, validation_fit_kws=fit_zgrid_validation_kws, ztype='zbest')
-    
-    # fit EAZY with trained dictionaries
-    # makefigs.fit_eazy_plots(lamb_rest, D_rest, templates_EAZY)
+            else:
+                zpeak_initial = None
+                zbest_initial = None
+                zlow_initial= None
+                zhigh_initial = None
+
+
+        plotting_training = (training & fit_training_catalog)
+
+        # Create zphot vs zspec plots
+        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zpeak_initial, z_trained=zpeak_trained, zmin=zmin, zmax=zmax, catalog='fitting_zpeak', training=plotting_training)
+        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zbest_initial, z_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='fitting_zbest', training=plotting_training)
+
+        # Create 6 bin uncertainty fraction and zscore plots
+        makefigs.uncertainty_binplots(zs=ztrue, zp=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, \
+                                    zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', training=plotting_training)
+        makefigs.uncertainty_binplots(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
+                                    zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', training=plotting_training)
+        # Create 6 bin zphot vs zspec hexbin plots
+        makefigs.hexbin_binplot(zs=ztrue, zp=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, \
+                                    zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', training=plotting_training)
+        makefigs.hexbin_binplot(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
+                                    zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', training=plotting_training)
+        # save estimated redshifts
+        np.savez_compressed(output_dir / 'estimated_redshifts.npz', ztrue=ztrue, zpeak=zpeak_trained, zbest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
+                zpeak_initial=zpeak_initial, zbest_initial=zbest_initial, zlow_initial=zlow_initial, zhigh_initial=zhigh_initial, coefs=coefs_trained, idx_cali=idx_cali)
+
+        # Sparsity plot
+        if larslasso:
+            makefigs.sparsity_report(coefs_trained=coefs_trained, max_feature=max_feature, add_constant=add_constant)
+
+        # select galaxy examples based on redshift error bin
+        idx_examples = []
+        idx_validation = np.arange(Ndat_validation, dtype=int)
+        idx_num_perbin = np.ones(6, dtype=int)
+        sigma_1pz_ranges = [
+                (0, 0.003),
+                (0.003, 0.01),
+                (0.01, 0.03),
+                (0.03, 0.1),
+                (0.1, 0.2),
+                (0.2, 0.5)]
+        sig_trained = (zhigh_trained-zlow_trained)/2
+        z_uncertainty = sig_trained/(1+zbest_trained)
+        for i , (low, high) in enumerate(sigma_1pz_ranges):
+            h = (z_uncertainty<high) & (z_uncertainty>low)
+            idx_in_bin = idx_validation[h]
+            if len(idx_in_bin) >= idx_num_perbin[i]:
+                selected_idx = np.random.choice(idx_in_bin, size=idx_num_perbin[i]).tolist()
+                idx_examples.extend(selected_idx)
+            else:
+                idx_num_perbin[i+1] += 1
+
+        # Create example SED plots
+        makefigs.example_seds(idx=idx_examples, cat=cat, lamb_rest=lamb_rest, D_rest=D_rest, D_rest_initial=D_rest_initial, \
+                            zgrid=zgrid, filters=filters, validation_fit_kws=fit_zgrid_validation_kws, ztype='zpeak')
+        # makefigs.example_seds(idx=idx_examples, cat=cat, lamb_rest=lamb_rest, D_rest=D_rest, D_rest_initial=D_rest_initial, \
+        #                       zgrid=zgrid, filters=filters, validation_fit_kws=fit_zgrid_validation_kws, ztype='zbest')
+        
+        # fit EAZY with trained dictionaries
+        # makefigs.fit_eazy_plots(lamb_rest, D_rest, templates_EAZY)
 
     tfc = time.time()
     print('\nElapsed Time = '+str(tfc-tic)+' seconds')

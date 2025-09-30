@@ -30,7 +30,7 @@ Dictionary:
 
 Algorithm:
     Training: True                                  # If False, skip training and use input dictionaries to fit validation catalog
-    Nepoch: 100                                    # Number of epochs to train
+    Nepoch: 150                                    # Number of epochs to train
     update_algorithm: 1                             # 0: D*p/sum(p^2), psudo-inverse vector method, 1: Block-coordinate descent from arXiv:0908.0050v2
     fix_z: True                                     # If True, always use ztrue from input file during all training and doesn't perform zgrid search
     Centering: False                                # If True, center all initial dictionaries (and normalized) and input catalog, default=False
@@ -64,6 +64,7 @@ LARSlasso:
     alpha_scaling: False                            # If True, alpha in each step will be alpha/n_sample (consistent with Lasso definition), default=False
 
 Fitting:
+    fitting: True                                   # If False, skip fitting validation catalog
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
     fit_training_catalog: False                      # If True, after training, do fitting and create performance plot for JUST training sets
     fit_initial_dicts: False                        # If True, also use initial dictionary to fit the validation catalog
