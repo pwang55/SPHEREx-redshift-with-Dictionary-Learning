@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import yaml
 from pathlib import Path
 from . import lib_dictlearn as fx
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib as mpl
 
 
 
@@ -73,7 +75,10 @@ class diagnostic_plots:
             plt.show()
         self.fig_num += 1
 
-    def zp_zs_plots(self, ztrue, z_trained, z_initial=None, zmin=0.0, zmax=3.0, catalog='fitting', gridsize=150, gridsize2=(150,30), training=False):
+    def zp_zs_plots(self, ztrue, z_trained, 
+                    z_initial=None, zl=None, zh=None, sig_1pz_cutoff=0.2,
+                    zmin=0.0, zmax=3.0, catalog='fitting', 
+                    gridsize=150, gridsize2=(150,30), fit_initial=False):
         zpzs_figsize = (12,7)
         lim_offset = 0.05
         bottom_ylim = 0.25
@@ -100,6 +105,11 @@ class diagnostic_plots:
 
 
         nmad_f, eta_f = fx.nmad_eta(zs=ztrue, zp=z_trained)
+        if zl is not None and zh is not None:
+            sig = (zh-zl)/2
+            sig_1pz = sig/(1+z_trained)
+            sig_mask = sig_1pz < sig_1pz_cutoff
+            nmad_f1, eta_f1 = fx.nmad_eta(zs=ztrue[sig_mask], zp=z_trained[sig_mask])
 
         fig, ax = plt.subplots(2, 2, num=self.fig_num, sharex=True, figsize=zpzs_figsize, gridspec_kw={'height_ratios': [3,1], 'width_ratios': [1,1.25]})
         ax[0,0].set_xlim(zmin-lim_offset,zmax+lim_offset)
@@ -119,7 +129,7 @@ class diagnostic_plots:
 
         ax[1,0].set_ylabel(r'$\Delta z/(1+z_{True})$', fontsize=labelfontsize)
 
-        if training:
+        if fit_initial:
             nmad_i, eta_i = fx.nmad_eta(zs=ztrue, zp=z_initial)
             ax[0,0].plot(ztrue, z_initial, m0, color=markercolor0, markersize=m0size, markeredgecolor=m0edgec, markeredgewidth=markeredgewidth0, alpha=m0alpha,
                         label=fr'Initial, $\eta={eta_i*100:.3f}$%, $\sigma_{{NMAD}}={nmad_i*100:.3f}$%')
@@ -127,6 +137,9 @@ class diagnostic_plots:
                         markeredgewidth=markeredgewidth0, alpha=m0alpha)
         ax[0,0].plot(ztrue, z_trained, m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth1, alpha=m1alpha,
                     label=fr'Trained, $\eta={eta_f*100:.3f}$%, $\sigma_{{NMAD}}={nmad_f*100:.3f}$%')
+        if zl is not None and zh is not None:
+            ax[0,0].plot(ztrue, z_trained, m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, markeredgewidth=markeredgewidth1, alpha=0,
+                    label=fr'$\sigma_{{z}}/(1+z)<0.2$: $\eta={eta_f1*100:.3f}$%, $\sigma_{{NMAD}}={nmad_f1*100:.3f}$%')    
         ax[1,0].plot(ztrue, (z_trained-ztrue)/(1+ztrue), m1, color=markercolor1, markersize=m1size, markeredgecolor=m1edgec, \
                      markeredgewidth=markeredgewidth1, alpha=m1alpha)
 
@@ -147,52 +160,86 @@ class diagnostic_plots:
         fig.suptitle(catalog)
         fig.tight_layout()
         if self.savefig:
-            plt.savefig(self.output_dir / f'redshift_estimation_performance_{catalog}_catalog.png', dpi=self.dpi)
+            plt.savefig(self.output_dir / f'redshift_estimation_performance_{catalog}.png', dpi=self.dpi)
         else:
             plt.show()
         self.fig_num += 1
 
-    def sparsity_report(self, coefs_trained, max_feature=None, add_constant=False):
+    def sparsity_report(self, coefs_trained, ynorm=None, max_feature=None, add_constant=False, catalog=''):
         Ngal = coefs_trained.shape[0]
         Ndict = coefs_trained.shape[1]
 
-        figsize = (6,8)
-        fig, ax = plt.subplots(3, 1, figsize=figsize, num=self.fig_num)
-        p = coefs_trained
-        param_nonzeros = np.zeros(Ndict+1, dtype=int)
-        for i in range(Ngal):
-            p1 = p[i]
-            num_nonzeros = np.sum(p1!=0)
-            param_nonzeros[num_nonzeros] += 1
-        ax[0].bar(np.arange(Ndict+1), param_nonzeros)
-        ax[0].set_title('Number of coefficients')
-        p_counts = np.zeros(Ndict, dtype=int)
-        p_pos_sums = np.zeros(Ndict)
-        p_sums = np.zeros(Ndict)
-        for i in range(Ndict):
-            pi = p[:,i]
-            p_counts[i] = np.sum(pi!=0)
-            p_pos_sums[i] = np.nansum(np.fabs(pi))
-            p_sums[i] = np.nansum((pi))
+        figsize = (8,8)
+        fig, ax = plt.subplots(3, 2, figsize=figsize, num=self.fig_num)
 
-        bar1 = ax[1].bar(np.arange(Ndict), p_counts, color='teal')
-        ax[1].set_title('# of times dictionary have been used')
-        bar21 = ax[2].bar(np.arange(Ndict), p_pos_sums, color='brown', alpha=0.6)
-        bar22 = ax[2].bar(np.arange(Ndict), p_sums, color='salmon', alpha=1.0)
+        coefs = coefs_trained
+        coefs[np.isnan(coefs)] = 0.0
+        coefs_nonzero_nums_in_each_source = np.sum((coefs!=0), axis=1)
+        coefs_nonzeros = np.zeros(Ndict+1, dtype=int)
+        for i in range(Ndict+1):
+            coefs_nonzeros[i] = np.sum(coefs_nonzero_nums_in_each_source==i)
+        ax[0,0].bar(np.arange(Ndict+1), coefs_nonzeros/Ngal)
+        ax[0,0].set_title('Number of coefficients')
+        # ax[0,0].set_xlabel('# of coefficients')
+        ax[0,0].set_ylabel('Frequency')
+
+        coef_counts = np.sum((coefs!=0), axis=0)
+        coef_sums = np.sum(coefs, axis=0)
+        coef_pos_sums = np.sum(np.fabs(coefs), axis=0)
+        bar10 = ax[1,0].bar(np.arange(Ndict), coef_counts/Ngal, color='teal')
+        ax[1,0].set_title('Dictionary activation frequency')
+
+        bar20_1 = ax[2,0].bar(np.arange(Ndict), coef_pos_sums, color='brown', alpha=0.6)
+        bar20_2 = ax[2,0].bar(np.arange(Ndict), coef_sums, color='salmon', alpha=1.0)
         if add_constant:
-            bar1[-1].set_alpha(0.35)
-            bar21[-1].set_alpha(0.35)
-            bar22[-1].set_alpha(0.35)
+            bar10[-1].set_alpha(0.35)
+            bar20_1[-1].set_alpha(0.35)
+            bar20_2[-1].set_alpha(0.35)
         if max_feature is not None:
             max_line = max_feature + 1
             ymin, ymax = ax[0].get_ylim()
-            ax[0].vlines(max_line, ymin=ymin, ymax=ymax, linewidth=1, color='tab:red')
-            ax[0].set_ylim(ymin, ymax)
+            ax[0,0].vlines(max_line, ymin=ymin, ymax=ymax, linewidth=1, color='tab:red')
+            ax[0,0].set_ylim(ymin, ymax)
 
-        ax[2].set_title('Sum of coefficients for each dictionary')
+        ax[2,0].set_title('Sum of coefficients for each dictionary')
+
+        if ynorm is not None:
+            cmap_name = 'inferno'
+            cmap = plt.get_cmap(cmap_name, Ndict)
+            norm = mpl.colors.BoundaryNorm(boundaries=np.arange(0.5, Ndict+1.5, 1), ncolors=Ndict)
+            ticks = [i for i in range(Ndict+1)]
+            sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+            divider = make_axes_locatable(ax[0,1])
+            cax = divider.append_axes("right", size="3%", pad=0.03)
+            # nanmask = ynorm >= 0
+            # ax[0,1].scatter(1/ynorm[nanmask], coefs_nonzero_nums_in_each_source[nanmask], s=5, alpha=0.1)
+            for di in range(1, Ndict+1):
+                nonmask = ~np.isnan(ynorm)
+                mask = (coefs_nonzero_nums_in_each_source == di)
+                im01 = ax[0,1].hist(1/ynorm[mask & nonmask], bins=100, alpha=0.1+(0.6/Ndict)*di, color=cmap(norm(di)), range=(0, np.max(1/ynorm[nonmask])))
+                cb = plt.colorbar(sm, cax=cax, ticks=ticks)
+                # fig.colorbar(im01, cax=cax, ticks=ticks, label='# of dicts')
+
+        divider11 = make_axes_locatable(ax[1,1])
+        cax11 = divider11.append_axes('right', size='5%', pad=0.03)
+
+        coefs_nonzeros_each_coef = (coefs != 0) * 1
+        num_cov = coefs_nonzeros_each_coef.T @ coefs_nonzeros_each_coef
+        im11 = ax[1,1].imshow(num_cov/Ngal)
+        cb11 = fig.colorbar(im11, cax=cax11)
+        ax[1,1].set_title('Co-activation frequency')
+
+        divider21 = make_axes_locatable(ax[2,1])
+        cax21 = divider21.append_axes('right', size='5%', pad=0.03)
+
+        coefs_dot_product = coefs.T @ coefs
+        im21 = ax[2,1].imshow(coefs_dot_product)
+        cb21 = fig.colorbar(im21, cax=cax21)
+        ax[2,1].set_title('Co-activation dot product')
+
 
         fig.tight_layout()
-        plt.savefig(self.output_dir / 'sparsity_reports.png')
+        plt.savefig(self.output_dir / f'sparsity_reports{catalog}.png')
         self.fig_num += 1
 
     def example_seds(self, cat, lamb_rest, D_rest, D_rest_initial, zgrid, validation_fit_kws, idx=None, filters=None, ztype='zpeak'):
@@ -249,12 +296,12 @@ class diagnostic_plots:
             spec_obs_i = np.ascontiguousarray(spec_obs[idx_i])
             err_obs_i = np.ascontiguousarray(err_obs[idx_i])
             zpeak_initial_ex, zbest_initial_ex, zlow_initial,zhigh_initial, \
-            coefs_initial, b_initial, best_model_initial, _, _ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
+            coefs_initial, _, best_model_initial, _, _, _ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
                                                             D_rest=D_rest_initial, zinput=False, zgrid=zgrid, 
                                                             filters=filters, **validation_fit_kws)
             # refit with the trained dictionary
             zpeak_trained_ex, zbest_trained_ex, zlow_trained, zhigh_trained, \
-            coefs_trained, b_best, best_model, _, _ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
+            coefs_trained, _, best_model, _, _, _ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, 
                                                     D_rest=D_rest, zinput=False, zgrid=zgrid, 
                                                     filters=filters, **validation_fit_kws)
             if ztype == 'zpeak':
@@ -300,7 +347,7 @@ class diagnostic_plots:
         self.fig_num += 1
 
     # Plot fractional uncertaintyt and z-score in 6 uncertainty bins
-    def uncertainty_binplots(self, zs, zp, zl, zh, zp0=None, zl0=None, zh0=None, dat=None, nbins=50, ztype='zbest', training=False):
+    def uncertainty_binplots(self, zs, zp, zl, zh, zp0=None, zl0=None, zh0=None, dat=None, nbins=50, ztype='zbest', fit_initial=False):
         if dat is not None:
             zs = dat['ztrue']
             # zp = dat['zest']
@@ -317,7 +364,7 @@ class diagnostic_plots:
                 zp = dat['zbest']
                 zp0 = dat['zbest_initial']
 
-        if not training:
+        if not fit_initial:
             zp0 = zp
             zl0 = zl
             zh0 = zh
@@ -406,7 +453,7 @@ class diagnostic_plots:
             med_frac_i = np.median(frac_uncertainty_i)
             ngals_i = len(zpi)
 
-            if training:
+            if fit_initial:
                 h0 = (frac_uncertainty0<high) & (frac_uncertainty0>low)
                 frac_uncertainty0_i = frac_uncertainty0[h0]
                 zs0i = zs[h0]
@@ -430,7 +477,7 @@ class diagnostic_plots:
             gaussian_i = np.max(cts) * np.exp(-gaussian_xi**2/(2*med_frac_i**2))
             ax[row1i, col1i].plot(gaussian_xi, gaussian_i, linewidth=color_args['g1_lwidth'], color=color_args['g1_color'], alpha=color_args['g1_alpha'])
 
-            if training:
+            if fit_initial:
                 cts0, bins0_i, _ = ax[row1i, col1i].hist(err_dist0_i, bins=nbins, range=hist1_ranges[i], histtype='step', 
                                                     linewidth=color_args['hist1_lwidth0'], color=color_args['hist1_color0'], alpha=color_args['hist1_alpha0'])
                 gaussian0_i = np.max(cts0) * np.exp(-gaussian_xi**2/(2*med_frac0_i**2))
@@ -468,7 +515,7 @@ class diagnostic_plots:
             zscore_i = (zpi - zsi)/sigi
             mean_zscore_i = np.mean(zscore_i)
             sig_zscore_i = np.std(zscore_i)
-            if training:
+            if fit_initial:
                 zscore0_i = (zp0i - zs0i)/sig0i
                 mean_zscore0_i = np.mean(zscore0_i)
                 sig_zscore0_i = np.std(zscore0_i)
@@ -477,7 +524,7 @@ class diagnostic_plots:
             gaussian_xi = np.linspace(hist2_range[0], hist2_range[1], g_pts)
             gaussian_zscore_i = np.max(cts2) * np.exp(-gaussian_xi**2/(2))
             ax[row2i, col2i].plot(gaussian_xi, gaussian_zscore_i, linewidth=color_args['g2_lwidth'], color=color_args['g2_color'], alpha=color_args['g2_alpha'])
-            if training:
+            if fit_initial:
                 cts0_2, bins0_2, _ = ax[row2i, col2i].hist(zscore0_i, bins=nbins, range=hist2_range, histtype='step', 
                                                     linewidth=color_args['hist2_lwidth0'], color=color_args['hist2_color0'], alpha=color_args['hist2_alpha0'])
                 gaussian_zscore0_i = np.max(cts0_2) * np.exp(-gaussian_xi**2/(2))
@@ -510,9 +557,9 @@ class diagnostic_plots:
 
 
 
-    def hexbin_binplot(self, zs, zp, zl, zh, zp0=None, zl0=None, zh0=None, dat=None, gridsize=100, ztype='zbest', training=False):
+    def hexbin_binplot(self, zs, zp, zl, zh, zp0=None, zl0=None, zh0=None, dat=None, gridsize=100, ztype='zbest', fit_initial=False):
 
-        figsize = (12,12-(1-training)*6)
+        figsize = (12,12-(1-fit_initial)*6)
         cmap1 = 'viridis'
         cmap2 = 'cividis'
 
@@ -531,12 +578,12 @@ class diagnostic_plots:
             elif ztype == 'zbest':
                 zp = dat['zbest']
                 zp0 = dat['zbest_initial']
-        if not training:
+        if not fit_initial:
             zp0 = zp
             zl0 = zl
             zh0 = zh
 
-        fig1, ax1 = plt.subplots(4-(1-training)*2, 3, sharex=True, sharey=True, figsize=figsize, num=self.fig_num)
+        fig1, ax1 = plt.subplots(4-(1-fit_initial)*2, 3, sharex=True, sharey=True, figsize=figsize, num=self.fig_num)
         zmin = 0.0
         zmax = 3.0
         # gridsize = (80,100)
@@ -558,7 +605,7 @@ class diagnostic_plots:
 
         sig = (zh-zl)/2
         frac_uncertainty = sig/(1+zp)
-        if training:
+        if fit_initial:
             sig0 = (zh0-zl0)/2
             frac_uncertainty0 = sig0/(1+zp0)            
 
@@ -572,7 +619,7 @@ class diagnostic_plots:
             bias_i = np.mean(err_dist_i)
             ngals_i = len(zpi)
 
-            if training:
+            if fit_initial:
                 h0 = (frac_uncertainty0<high) & (frac_uncertainty0>low)
                 zs0i = zs[h0]
                 zp0i = zp0[h0]
@@ -610,7 +657,7 @@ class diagnostic_plots:
             ax1[row1i, col1i].set_ylim(zmin, zmax)
 
             # Plot z initial hexbins
-            if training:    
+            if fit_initial:    
                 row2i = p2_rows[i]
                 col2i = p2_cols[i]
 
@@ -639,8 +686,8 @@ class diagnostic_plots:
                         bbox=dict(facecolor='w', alpha=0.7, linewidth=0.0, edgecolor='black', boxstyle='square,pad=0.5'))
 
         # fig.suptitle('Dictionary learning')
-        fig1.text(0.02, 0.73*training+0.5*(1-training), f'Trained dictionary performance ({ztype})', va='center', ha='center', rotation='vertical', fontsize=10)
-        if training:
+        fig1.text(0.02, 0.73*fit_initial+0.5*(1-fit_initial), f'Trained dictionary performance ({ztype})', va='center', ha='center', rotation='vertical', fontsize=10)
+        if fit_initial:
             fig1.text(0.02, 0.28, f'Initial dictionary performance ({ztype})', va='center', ha='center', rotation='vertical', fontsize=10)
         fig1.tight_layout(rect=[0.02, 0.0, 1.0, 0.98])
         if self.savefig:
@@ -684,3 +731,78 @@ class diagnostic_plots:
             plt.show()
         self.fig_num += 1
 
+    def chi2_plots(self, ynorms, reduced_chi2s=None, reduced_chi2s_fixz=None, last_alpha=None, last_alpha_fixz=None, Nbins=100, N_perbin=20, Nstd=4, catalog='fitting'):
+
+        alpha_hist = 0.6
+        alpha_scatter = 0.1
+        s_scatter = 0.5
+
+        if reduced_chi2s is not None:
+            med = np.nanmedian(reduced_chi2s)
+            # std = np.nanstd(reduced_chi2s)
+            std = 1.48 * np.nanmedian(np.abs(reduced_chi2s-np.nanmedian(reduced_chi2s)))
+        else:
+            med = 0.0
+            std = 0.0
+
+        if reduced_chi2s_fixz is not None:
+            med_fixz = np.nanmedian(reduced_chi2s_fixz)
+            # std_fixz = np.nanstd(reduced_chi2s_fixz)
+            std_fixz = 1.48 * np.nanmedian(np.abs(reduced_chi2s_fixz-np.nanmedian(reduced_chi2s_fixz)))
+
+        else:
+            med_fixz = 0.0
+            std_fixz = 0.0
+
+        max_rchi2 = np.max([(med+Nstd*std), (med_fixz+Nstd*std_fixz)])
+        # min_rchi2 = 0.1
+        # print(max_rchi2)
+        # Nbins = len(ynorms[reduced_chi2s<max_rchi2]) // N_perbin
+        fig, ax = plt.subplots(2, 1, num=self.fig_num, figsize=(4,6))
+
+        if reduced_chi2s is not None:
+            mask = (reduced_chi2s<max_rchi2) & (~np.isnan(ynorms))
+            ax[0].hist(reduced_chi2s[mask], bins=Nbins, alpha=alpha_hist, label='zpeak')
+            ax[1].scatter(1/ynorms[mask], reduced_chi2s[mask], s=s_scatter, alpha=alpha_scatter, label='zpeak')
+
+        if reduced_chi2s_fixz is not None:
+            mask_fixz = (reduced_chi2s_fixz<max_rchi2) & (~np.isnan(ynorms))
+            ax[0].hist(reduced_chi2s_fixz[mask_fixz], bins=Nbins, alpha=alpha_hist, label='ztrue')
+            ax[1].scatter(1/ynorms[mask_fixz], reduced_chi2s_fixz[mask_fixz], s=s_scatter, alpha=alpha_scatter, label='ztrue')
+
+        # calculate range of 1/ynorm
+        alpha_sigma = 1/ynorms
+        med_1_over_ynorm = np.nanmedian(alpha_sigma)
+        std_1_over_ynorm = 1.48 * np.nanmedian(np.abs(alpha_sigma-np.nanmedian(alpha_sigma)))
+        mask2 = alpha_sigma < (med_1_over_ynorm + Nstd*std_1_over_ynorm)
+
+        # if last_alpha is not None:
+            # ax[1].scatter(1/ynorms[mask2], last_alpha[mask2], s=s_scatter, alpha=alpha_scatter, label='zpeak')
+        # if last_alpha_fixz is not None:
+            # ax[1].scatter(1/ynorms[mask2], last_alpha_fixz[mask2], s=s_scatter, alpha=alpha_scatter, label='ztrue')
+        # for sigma_i in range(3):
+            # ax[1].plot(1/ynorms[mask2], 1/ynorms[mask2]*(sigma_i+1), linewidth=0.5, alpha=0.8-0.1*sigma_i, color='tab:green')
+
+        # ax0_xmin, ax0_xmax = ax[0].get_xlim()
+        ax0_ymin, ax0_ymax = ax[0].get_ylim()
+        # ax[0].set_xlim(min_rchi2, max_rchi2)
+        ax[0].set_ylim(ax0_ymin, ax0_ymax)
+        ax[0].vlines(x=1, ymin=ax0_ymin, ymax=ax0_ymax, linestyle='--', color='k', linewidth=1, alpha=0.8)
+        ax[0].set_xlabel(r'$\chi^2/N_{filt}$')
+        # ax[1].set_ylim(min_rchi2, max_rchi2)
+        ax[1].set_xlabel(r'$1/\|\frac{flux}{error}\|_2$')
+        # ax[1].set_ylabel(r'Last $\alpha$')
+        ax[1].set_ylabel(r'$\chi^2/N_{filt}$')
+        # ax[1].set_xscale('log')
+        # ax[1].set_yscale('log')
+        ax[0].legend()
+        ax[1].legend()
+        ax[0].grid()
+        ax[1].grid()
+        fig.tight_layout()
+        if self.savefig:
+            plt.savefig(self.output_dir / f'chi2_plots_{catalog}.png', dpi=self.dpi)
+        else:
+            plt.show()
+
+        self.fig_num += 1

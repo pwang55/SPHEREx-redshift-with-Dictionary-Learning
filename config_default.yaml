@@ -2,13 +2,15 @@
 
 Catalog:
     # training_catalog: input_catalogs/GAMA_cut_rand3000.npz   # input catalog for training
-    # training_catalog: input_catalogs/deepfield_7795_cut_GAMA_cut_rand1500.npz   # input catalog for training
-    training_catalog: input_catalogs/deepfield_7795_cut.npz   # input catalog for training
-    validation_catalog: input_catalogs/quickcat_110k_selected.npz   # input catalog for validation
-    # validation_catalog: input_catalogs/GAMA_quickcat_fiducial_parquet.npz   # input catalog for validation
+    training_catalog: input_catalogs/deepfield_2years_scale_from_allsky_7795_cut.npz   # input catalog for training
+    # training_catalog: input_catalogs/deepfield_targets_from_allsky_noscale_7795.npz   # input catalog for training
+    validation_catalog: input_catalogs/COSMOS_110k_cut_quickcat_fiducial_parquet.npz   # input catalog for validation
+    # validation_catalog: input_catalogs/COSMOS_110k_deepfield_level_cut.npz   # input catalog for validation
+    # validation_catalog: input_catalogs/GAMA_cut_quickcat_fiducial_parquet.npz   # input catalog for validation
+    # validation_catalog: input_catalogs/COSMOS_110k_cut_GAMA_cut_fiducial.npz   # input catalog for validation
     filter_central_wavelengths: FILTERS/SPHEREx_102/fiducial_filters_cent_waves.txt   # Central wavelength in microns, if left blank, will use wavelengths from catalog files
     Ndat_training: 20000                            # Number of input training data to train
-    Ndat_validation: 167000                          # Number of input fitting catalog
+    Ndat_validation: 20000                          # Number of input fitting catalog
     use_DESI_flag: True                             # If true, when DESI_flag=1, fix redshift, will ignore Ncalibrators
     Ncalibrators: 1000                              # Number of calibration galaxies that will use fixed zspec when training in the beginning, even if fix_z=True
     calibrator_SNR: 5                             # Minimum SNR at channel 51 for sources to qualify as calibrator sources
@@ -18,8 +20,10 @@ Dictionary:
     read_from_file: initial_dicts/brown_cosmos_kmean20.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
     # read_from_file: initial_dicts/converged_trained.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
     # read_from_file: initial_dicts/GAMA_trained_test.npz                           # If set to filename, read from existing file; set to "False" to initialize with noise
+    # read_from_file: OUTPUTS/trained_templates.npz
     # read_from_file: False
     add_constant: False                             # If true, added a constant dictionary that will not be trained but will be used for fitting
+    Nrestframe_dicts: 0                             # Number of dictionaries to stay in rest frame (never get redshifted); Nrest counting from the START of dicts
     Fix_dicts: 0                                    # How many dictionaries to be fixed at the end, not including constant; N dicts counting from the end will not be updated
     Ndict: 12                                       # Number of dictionaries to initialize; if Ndict > number of dicts from file then Ndict will be set to actual number of dictionaries in file
 
@@ -39,6 +43,7 @@ Algorithm:
     remove_old_ab_info: True                        # If True, after each epoch, when learning the same spectra again, remove old A and B info
     epochs_to_keep: 1                               # How many epochs information to keep in A and B matrices
     scale_past_data: True                           # Scale past A & B information with (1-1/t)
+    correct_nodata_offset: False                     # whether to shift parts of templates that are not overlapped with data with offset
     separate_training_weights: False                 # Have different training weights for Bands 1~4 and Bands 5, 6; if False, weights1 and 2 are not used
     weights1: 1.0
     weights2: 0.5
@@ -56,6 +61,9 @@ LARSlasso:
     train_best_estimator:                           # EXPERIMENTAL If 'Cp' or 'BIC', use LARS-lasso fit with the lowest Cp/BIC estimator value; leave blank for None
     fit_best_estimator:                        # EXPERIMENTAL If 'Cp' or 'BIC', use LARS-lasso fit with the lowest Cp/BIC estimator value; leave blank for None
     max_feature:                                    # Maximum allowed dictionaries to fit each galaxy, leave blank for no restriction
+    active_alpha_0_training: False                  # If True, even when alpha != 0, use active templates and set alpha=0 for final fits with training set
+    active_alpha_0_fitting: False                   # If True, even when alpha != 0, use active templates and set alpha=0 for final fits with validation set
+    active_alpha_0_fitting_penalty: False            # If True, even when active_alpha_0_fitting=True, still apply Lasso penalty in cost, ignored if above=False
     active_OLS_training: False                      # If True, only use alpha as active template selection and calculate OLS solution with active templates during training, default=False
     active_OLS_fitting: False                       # If True, during fitting use OLS solution with active sets, default=False
     center_Xy: False                                # Within LARSlasso, whether to center weighted, redshift sampled X matrices and y or not

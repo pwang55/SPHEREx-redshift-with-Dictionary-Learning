@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from numba import jit, njit
+from numba.typed import List
 import matplotlib.pyplot as plt
 import time
 from types import SimpleNamespace
@@ -36,6 +37,7 @@ class Configs:
         # Dictionary input configurations
         self.dict_read_from_file = self.Dictionary['read_from_file']
         self.add_constant = self.Dictionary['add_constant']
+        self.Nrestframe_dicts = self.Dictionary['Nrestframe_dicts']
         self.fix_dicts = self.Dictionary['Fix_dicts']
         self.Ndict = self.Dictionary['Ndict']
         self.num_EAZY_as_dict = self.Dictionary['num_EAZY_as_dict']
@@ -55,6 +57,7 @@ class Configs:
         self.remove_old_ab_info = self.Algorithm['remove_old_ab_info']
         self.epochs_to_keep = self.Algorithm['epochs_to_keep']
         self.scale_past_data = self.Algorithm['scale_past_data']
+        self.correct_nodata_offset = self.Algorithm['correct_nodata_offset']
         self.separate_training_weights = self.Algorithm['separate_training_weights']
         self.weights1 = self.Algorithm['weights1']
         self.weights2 = self.Algorithm['weights2']
@@ -73,6 +76,9 @@ class Configs:
         self.train_best_estimator = self.LARSlasso['train_best_estimator']
         self.fit_best_estimator = self.LARSlasso['fit_best_estimator']
         self.max_feature = self.LARSlasso['max_feature']
+        self.active_alpha_0_training = self.LARSlasso['active_alpha_0_training']
+        self.active_alpha_0_fitting = self.LARSlasso['active_alpha_0_fitting']
+        self.active_alpha_0_fitting_penalty = self.LARSlasso['active_alpha_0_fitting_penalty']
         self.active_OLS_training = self.LARSlasso['active_OLS_training']
         self.active_OLS_fitting = self.LARSlasso['active_OLS_fitting']
         self.center_Xy = self.LARSlasso['center_Xy']
@@ -118,6 +124,7 @@ class Configs:
 
         # keywords for fit_zgrid function (training) has to match fit_zgrid input keywords
         self.fit_zgrid_training_kws = {
+                            'Nrestframe_dicts': self.Nrestframe_dicts,
                             'larslasso': self.larslasso,
                             'alpha': self.larslasso_alpha_train,
                             'alpha_sig': self.larslasso_alpha_sigma_train,
@@ -125,6 +132,7 @@ class Configs:
                             'best_estimator': self.train_best_estimator,
                             'max_feature': self.max_feature,
                             'active_ols': self.active_OLS_training,
+                            'active_alpha_0': self.active_alpha_0_training,
                             'alpha_ns_scaling': self.larslasso_alpha_scaling,
                             'center_Xy': self.center_Xy,
                             'unit_X': self.unit_X,
@@ -147,10 +155,11 @@ class Configs:
         self.fit_zgrid_validation_kws['conv'] = self.fitting_convolve_filter
         self.fit_zgrid_validation_kws['conv_finegrid'] = self.fitting_convolve_filter
         self.fit_zgrid_validation_kws['active_ols'] = self.active_OLS_fitting
+        self.fit_zgrid_validation_kws['active_alpha_0'] = self.active_alpha_0_fitting
         self.fit_zgrid_validation_kws['best_estimator'] = self.fit_best_estimator
         self.fit_zgrid_validation_kws['alpha'] = self.larslasso_alpha_fit
         self.fit_zgrid_validation_kws['alpha_sig'] = self.larslasso_alpha_sigma_fit
-
+        self.fit_zgrid_validation_kws['active_alpha_0_fitting_penalty'] = self.active_alpha_0_fitting_penalty
 
 
 class Catalog:
@@ -506,37 +515,45 @@ def apply_redshift(D,z,lamb_in,lamb_out):
 
 # apply redshift function with additional option to convolve with filters
 @jit(nopython=True, fastmath=True)
-def apply_redshift1(D,z,lamb_in,lamb_out, filters=None, conv=False):
+def apply_redshift1(D,z,lamb_in,lamb_out, Nrestframe_dicts=0, filters=None, conv=False):
     # interpolate and redshift each spectrum in the dictionary
     lamb_inx1pz = lamb_in * (1+z)
     if conv and (filters is not None):
         D_out = np.zeros((D.shape[0],len(lamb_out)))
         for i in range(D.shape[0]):
-            D_conv = f_convolve_filter(lamb_inx1pz, D[i,:], filters)
+            if i < Nrestframe_dicts:    # if i is smaller than Nrestframe_dicts, don't shift it
+                D_conv = f_convolve_filter(lamb_in, D[i,:], filters)
+            else:
+                D_conv = f_convolve_filter(lamb_inx1pz, D[i,:], filters)
             D_out[i,:] = D_conv
         # else:
         #     D_out[i,:] = np.interp(lamb_out,lamb_inx1pz,D[i,:])
     else:
-        D_out = multiInterp1(lamb_out, lamb_inx1pz, D)
+        if Nrestframe_dicts > 0:
+            D_out_restframe = multiInterp1(lamb_out, lamb_in, D[:Nrestframe_dicts])
+            D_out_redshifted = multiInterp1(lamb_out, lamb_inx1pz, D[Nrestframe_dicts:])
+            D_out = np.vstack((D_out_restframe, D_out_redshifted))
+        else:
+            D_out = multiInterp1(lamb_out, lamb_inx1pz, D)
     return D_out
 
 # apply redshift to all zgrid points and output 3-d array
 @njit(fastmath=True)
-def apply_redshift_all(D, zgrid, lamb_in, lamb_out, filters=None, conv=False):
+def apply_redshift_all(D, zgrid, lamb_in, lamb_out, Nrestframe_dicts=0, filters=None, conv=False):
     nz = zgrid.shape[0]
     D_all = np.zeros((nz, D.shape[0], lamb_out.shape[0]))
     for i in range(nz):
-        D_thisz = apply_redshift1(D, zgrid[i], lamb_in, lamb_out, filters=filters, conv=conv)
+        D_thisz = apply_redshift1(D, zgrid[i], lamb_in, lamb_out, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
         D_all[i] = D_thisz
     return D_all
 
 
-    
 # Fit data with dictionary across the whole redshift grid
 @jit(nopython=True, fastmath=True)
-def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, zinput=False, filters=None,
-                larslasso=False, alpha=0, alpha_sig=0.0, positive=False, center_Xy=False, unit_X=True, unit_y=True, 
-                path=False, best_estimator=None, max_feature=None, alpha_ns_scaling=False, active_ols=False,
+def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, Nrestframe_dicts=0, zinput=False, filters=None,
+                larslasso=True, alpha=0, alpha_sig=0.0, positive=True, center_Xy=False, unit_X=True, unit_y=True, 
+                path=True, best_estimator=None, max_feature=None, alpha_ns_scaling=False, 
+                active_alpha_0=False, active_alpha_0_fitting_penalty=False, active_ols=False,
                 dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, error=False, probline=0.317/2, 
                 conv=False, conv_finegrid=False, local_finegrid=False, local_finegrid_size=0.03, local_finegrid_dz=0.001):
     # Check if D_rest is necessary but not given
@@ -553,7 +570,7 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         zgrid = np.array([zinput_float])
         local_finegrid = False
         zpeak0 = zinput_float
-        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
+        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
         D_allz = D_zinput.reshape((1, D_zinput.shape[0], D_zinput.shape[1]))
     
     else:
@@ -587,10 +604,10 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
 
         # check if D_allz is given
         if D_allz is None:
-            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
         elif zinput:
             # if D_allz and zinput are provided, create a new D_allz array and insert D_zinput to the correct location
-            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
             D_allz_copy = D_allz.copy()
             D_allz = np.zeros((D_allz_copy.shape[0]+1, D_allz_copy.shape[1], D_allz_copy.shape[2]), dtype=D_allz_copy.dtype)
             D_allz[:D_allz_copy.shape[0]] = D_allz_copy
@@ -602,25 +619,31 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
     coefs_zgrid = np.zeros((zgrid.shape[0], D_allz.shape[1]))
     bs_zgrid = np.zeros_like(zgrid)
     chi2_zgrid = np.zeros_like(zgrid) + np.inf
+    # larslasso_step_zgrid = np.zeros_like(zgrid)
+    alpha_path_list = List()
 
     # loop over zgrid to calculate best-fit and chi2
     for i in range(zgrid.shape[0]):
         D_thisz = D_allz[i]
         if not larslasso:
-            coefs, model = fit_models_ols(D_thisz, spec_data, err_data)
+            coef, model = fit_models_ols(D_thisz, spec_data, err_data)
             b = np.array(0.0)
             cost = np.sum((model - spec_data)**2/err_data**2)
+            alpha_path = np.array([0.0])
         else:
             # D_thisz = np.ascontiguousarray(D_thisz)
             # spec_data = np.ascontiguousarray(spec_data)
             # err_data = np.ascontiguousarray(err_data)
-            coefs, b, model, cost = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+            coef, b, model, cost, alpha_path = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
                                                 center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
                                                 max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
-                                                max_feature=max_feature, active_ols=active_ols)
-        coefs_zgrid[i] = coefs
+                                                max_feature=max_feature, active_alpha_0=active_alpha_0, active_ols=active_ols)
+
+        coefs_zgrid[i] = coef
         bs_zgrid[i] = b
         chi2_zgrid[i] = cost
+        # larslasso_step_zgrid[i] = larslasso_step
+        alpha_path_list.append(alpha_path)
 
     # if not zinput:
     idx_zpeak0 = np.argmin(chi2_zgrid)
@@ -635,27 +658,33 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         z_localmin = max((zpeak0-local_finegrid_size, zmin))
         zgrid_local = np.arange(z_localmin, z_localmax, local_finegrid_dz)
         local_length = zgrid_local.shape[0]
-        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filters=filters, conv=conv_finegrid)
+        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv_finegrid)
         coefs_zgrid_local = np.zeros((local_length, D_allz.shape[1]))
         bs_zgrid_local = np.zeros_like(zgrid_local)
         chi2_zgrid_local = np.zeros_like(zgrid_local) + np.inf
+        alpha_path_list_local = List()
+        # larslasso_step_zgrid_local = np.zeros_like(zgrid_local)
 
         for j in range(local_length):
             D_this_localz = D_all_localz[j]
             if not larslasso:
-                coefs, model = fit_models_ols(D_this_localz, spec_data, err_data)
+                coef, model = fit_models_ols(D_this_localz, spec_data, err_data)
                 b = np.array(0.0)
                 cost = np.sum((model - spec_data)**2/err_data**2)
+                alpha_path = np.array([0.0])
             else:
                 # spec_data = np.ascontiguousarray(spec_data)
                 # err_data = np.ascontiguousarray(err_data)
-                coefs, b, model, cost = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+                coef, b, model, cost, alpha_path = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
                                                     center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
-                                                    max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
-                                                    max_feature=max_feature, active_ols=active_ols)
-            coefs_zgrid_local[j] = coefs
+                                                    max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, max_feature=max_feature, 
+                                                    active_alpha_0=active_alpha_0, active_alpha_0_fitting_penalty=active_alpha_0_fitting_penalty, active_ols=active_ols)
+
+            coefs_zgrid_local[j] = coef
             bs_zgrid_local[j] = b
             chi2_zgrid_local[j] = cost
+            alpha_path_list_local.append(alpha_path)
+            # larslasso_step_zgrid_local[j] = larslasso_step
 
         # combine coefs, chi2, D_allz, zgrid with local arrays
         zgrid_copy = zgrid.copy()
@@ -663,21 +692,36 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         idx_zgrid_new = np.argsort(zgrid)
         zgrid = zgrid[idx_zgrid_new]
 
+        # copy global grid results first so that the same parameter names can be reused as global+local
         coefs_zgrid_copy = coefs_zgrid.copy()
         bs_zgrid_copy = bs_zgrid.copy()
         chi2_zgrid_copy = chi2_zgrid.copy()
+        # larslasso_steps_copy = larslasso_step_zgrid.copy()
+
+        # combine global grid with local grid
         coefs_zgrid = np.vstack((coefs_zgrid_copy, coefs_zgrid_local))
         bs_zgrid = np.hstack((bs_zgrid_copy, bs_zgrid_local))
         chi2_zgrid = np.hstack((chi2_zgrid_copy, chi2_zgrid_local))
+        alpha_path_list.extend(alpha_path_list_local)   # alpha_path_list is a numba.typed List so just extend
+        alpha_path_list_copy = alpha_path_list.copy()
+        # larslasso_step_zgrid = np.hstack((larslasso_steps_copy, larslasso_step_zgrid_local))
+
+        # copy global D_allz, create new D_allz with global+local dimension and fill in global and local D_allz
         D_allz_copy = D_allz.copy()
         D_allz = np.zeros((zgrid.shape[0], D_allz_copy.shape[1], D_allz_copy.shape[2]), dtype=D_allz_copy.dtype)
         D_allz[:D_allz_copy.shape[0]] = D_allz_copy
         D_allz[D_allz_copy.shape[0]:] = D_all_localz
+
         # sort all the combine arrays
         coefs_zgrid = coefs_zgrid[idx_zgrid_new]
         bs_zgrid = bs_zgrid[idx_zgrid_new]
         chi2_zgrid = chi2_zgrid[idx_zgrid_new]
+        # larslasso_step_zgrid = larslasso_step_zgrid[idx_zgrid_new]
         D_allz = D_allz[idx_zgrid_new]
+        # sort alpha_path with a for loop
+        alpha_path_list = List()
+        for ai in range(len(idx_zgrid_new)):
+            alpha_path_list.append(alpha_path_list_copy[idx_zgrid_new[ai]])
 
         if zinput:
             idx_zpeak1 = np.where(idx_zgrid_new==idx_zpeak0)[0][0]  # figure where zinput is
@@ -701,6 +745,8 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
     b_zpeak = np.array(bs_zgrid[idx_zpeak1])
     # chi2_zpeak = chi2_zgrid[idx_zpeak1]
     model_zpeak = D_zpeak.T @ coef_zpeak
+    alpha_path_zpeak = alpha_path_list[idx_zpeak1]
+    # larslasso_step_peak = larslasso_step_zgrid[idx_zpeak1]
 
     # calculate averaged z_best
     if zinput:
@@ -712,8 +758,20 @@ def fit_zgrid(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, 
         # likelihood = likelihood/area
         zbest = np.trapezoid((likelihood*zgrid), zgrid)/area
 
-    return zpeak1, zbest, zlower, zupper, coef_zpeak, b_zpeak, model_zpeak, zgrid, chi2_zgrid
-
+    return zpeak1, zbest, zlower, zupper, coef_zpeak, b_zpeak, model_zpeak, zgrid, chi2_zgrid, alpha_path_zpeak
+    # outputs_dict = {
+    #     'zpeak': zpeak1,
+    #     'zbest': zbest,
+    #     'zlower': zlower,
+    #     'zupper': zupper,
+    #     'coef': coef_zpeak,
+    #     'b': b_zpeak,
+    #     'model': model_zpeak,
+    #     'zgrid': zgrid,
+    #     'chi2_zgrid': chi2_zgrid,
+    #     'alpha_path': alpha_path_zpeak
+    # }
+    # return outputs_dict
 
 @njit(fastmath=True)
 def error_estimation(zgrid, chi2, probline=0.317/2):
@@ -760,22 +818,23 @@ def fit_models_ols(D_thisz, spec_data, err_data):
     X = (D_thisz/err_data).T
     X = np.ascontiguousarray(X)
     y = spec_data/err_data
-    coefs = ols(X, y)
-    model = (D_thisz*err_data).T @ coefs
-    return coefs, model
+    coef = ols(X, y)
+    model = (D_thisz*err_data).T @ coef
+    return coef, model
 
 # OLS function with simple X, y input format
 @jit(nopython=True, fastmath=True)
 def ols(X, y):
-    coefs = np.linalg.inv(X.T @ X) @ X.T @ y
+    coef = np.linalg.inv(X.T @ X) @ X.T @ y
     # model = X @ params
-    return coefs
-
+    return coef
 
 @jit(nopython=True, fastmath=True)
 def fit_model_larslasso(D_thisz, spec_data, err_data, alpha=0.0, alpha_sig=0.0, positive=False,  
-                        center_Xy=False, unit_X=True, unit_y=True, path=False, best_estimator=None,
-                        max_iter=200, decimals=10, max_feature=None, alpha_ns_scaling=False, active_ols=False):
+                        center_Xy=False, unit_X=True, unit_y=True, path=True, best_estimator=None,
+                        max_iter=200, decimals=10, max_feature=None, alpha_ns_scaling=False, 
+                        active_alpha_0=False, active_alpha_0_fitting_penalty=False, active_ols=False):
+# def fit_model_larslasso(D_thisz, spec_data, err_data, *args, **kwargs):
     X = (D_thisz/err_data).T    # currently D_thisz is X.T in usual LARSlasso convention
     X = np.ascontiguousarray(X)
     y = spec_data/err_data
@@ -801,23 +860,44 @@ def fit_model_larslasso(D_thisz, spec_data, err_data, alpha=0.0, alpha_sig=0.0, 
     alpha_in = alpha_sig*d_corr
     alpha_in[alpha_in<alpha] = alpha
 
-    coefs, b, _, alpha_path, est_path = larslasso(X, y, alpha=alpha_in, positive=positive, 
+    coef, b, _, alpha_path, est_path = larslasso(X, y, alpha=alpha_in, positive=positive, 
                         center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,
                         max_iter=max_iter, decimals=decimals, max_feature=max_feature, 
                         alpha_ns_scaling=alpha_ns_scaling, active_ols=active_ols)
-    coefs = np.ascontiguousarray(coefs)
-    
-    ymodel = X @ coefs + b
+    last_alpha = alpha_path[-1]
+    if active_alpha_0 and ((alpha>0) or (alpha_sig>0)):
+        active_idx = np.where(coef!=0)[0]
+        X_a = X[:, active_idx]
+        coef_a, b, _, alpha_path, est_path = larslasso(X_a, y, alpha=0.0, positive=positive, 
+                        center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,
+                        max_iter=max_iter, decimals=decimals, max_feature=max_feature, 
+                        alpha_ns_scaling=alpha_ns_scaling, active_ols=active_ols)
+        coef = np.zeros(X.shape[1])
+        coef[active_idx] = coef_a
+        if not active_alpha_0_fitting_penalty:
+            last_alpha = 0.0
+
+    ymodel = X @ coef + b
     model = ymodel * err_data
-    # TESTING
+
     if best_estimator is not None:
         alpha_out = np.full_like(alpha_in, alpha_path[np.argmin(est_path)])
     else:
-        alpha_out = alpha_in
+        # alpha_out = alpha_in
+        alpha_out = np.full_like(alpha_in, last_alpha)  # use the last alpha_path as alpha_out
     # alpha_out = alpha_in
-    cost = np.sum((y - ymodel)**2) + 2 * (ynorm/ynorm_inside) * (np.sum(np.fabs(alpha_out*Xnorms/Xnorms_inside*coefs)))
+    cost = np.sum((y - ymodel)**2) + 2 * (ynorm/ynorm_inside) * (np.sum(np.fabs(alpha_out*Xnorms/Xnorms_inside*coef)))
+    # cost = np.sum((y - ymodel)**2) + 2 * (ynorm/ynorm_inside) * np.linalg.norm(alpha_out*Xnorms/Xnorms_inside*coef)   # use l2-norm, probably wrong
     # cost = np.sum((y - ymodel)**2)
-    return coefs, b, model, cost
+    return coef, b, model, cost, alpha_path
+    # otuput_dict = {
+    #     'coefs': coef,
+    #     'b': b,
+    #     'model': model,
+    #     'cost': cost,
+    #     'alpha_path': alpha_path
+    # }
+    # return otuput_dict
 
 @jit(nopython=True, fastmath=True)
 def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, unit_y=True, path=False, best_estimator=None,
@@ -865,15 +945,15 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
     decimals : int, default=10
         Number of decimals to round coefficients for stability
 
-    alpha_ns_scaling: bool, default=False
+    alpha_ns_scaling : bool, default=False
         If True, alpha_i in each step will be alpha_i/ns 
         This is so that alpha is more consistent with lasso L1-regularization definition.
 
-    max_feature: int, default=None
+    max_feature : int, default=None
         Max allowed activated features before ending algorithm early
         If None, max_feature = nf
 
-    active_ols: bool, default=False
+    active_ols : bool, default=False
         If True, only use alpha as active set selection and calculate ordinary least-square fit with active set when selction ends
 
     Returns
@@ -936,6 +1016,7 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
         # alpha_array = np.zeros(nf)
     # else:
     alpha_array = alpha - np.zeros(nf)
+    alpha_array0 = alpha_array.copy()
 
     n_iter = 0
     nA = 0
@@ -971,9 +1052,11 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
         if path:
             alpha_path = np.hstack((alpha_path, alphas))
 
-        if alphas < alpha_array[c_idx] and n_iter > 0:
-            # print('End early')
+        # Early stopping criteria
+        if (alphas < alpha_array[c_idx] and n_iter > 0) or (nA >= max_feature and n_iter > 0):
             if not active_ols:
+                # if active_alpha_0:
+                    # alpha_array = np.zeros_like(alpha_array)
                 ss = (prev_alphas - alpha_array) / (prev_alphas - alphas)
                 coef = prev_coef + ss * (coef - prev_coef)
                 alphas[0] = alpha_array[c_idx]
@@ -987,13 +1070,17 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
                 # coef_path[:-1] = coef_path_copy
                 # coef_path[-1] = coef
                 coef_path[-1] = coef
+                # if active_alpha_0_fitting_penalty and active_alpha_0:
+                    # alpha_path[-1] = alpha_array0[c_idx]
+                # else:
+                    # alpha_path[-1] = alpha_array[c_idx]
                 alpha_path[-1] = alpha_array[c_idx]
                 # coef_path = np.append(coef_path, coef).reshape((n_iter+2, nf))
             # else:
                 # coef_path = coef_path[None,:]   # add an axis so that dimension and type is compatible with coef_path when path=True
             break
 
-        if n_iter >= max_iter or nA >= nf or nA >= max_feature:
+        if n_iter >= max_iter or nA >= nf:
             # print('Stopping criteria met')
             break
 
@@ -1063,8 +1150,8 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
             idx_A_tf[idx_drop] = False
             idx_rest_tf[idx_drop] = True
 
+    est_path = np.zeros_like(alpha_path)
     if best_estimator:
-        est_path = np.zeros_like(alpha_path)
         for i in range(est_path.shape[0]):
             coef_i = coef_path[i]
             coef_i = np.ascontiguousarray(coef_i)
@@ -1088,9 +1175,14 @@ def larslasso(X, y, alpha=0.0, positive=False, center_Xy=False, unit_X=True, uni
         coef_path = np.around(coef_path, decimals=decimals)
 
     # model = X @ coef + b
-
+    # output_dict = {'coef': coef,
+    #                'b': b,
+    #                'coef_path': coef_path,
+    #                'alpha_path': alpha_path,
+    #                'est_path': est_path}
     # return coef, b, coef_path, alpha_path
     return coef, b, coef_path, alpha_path, est_path  # TEMP
+    # return output_dict
     # return coef, b
     # return coef
 
@@ -1115,9 +1207,9 @@ def nmad_eta(zs, zp, eta_method=0):
 
 
 # Diagnostic functions that works just as fit_zgrid but output all coefs instead of just best fit coefficient
-def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, zgrid=None, zinput=False, filters=None,
+def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=None, Nrestframe_dicts=0, zgrid=None, zinput=False, filters=None,
                 larslasso=False, alpha=0, alpha_sig=0.0, lars_positive=False, center_Xy=False, unit_X=True, unit_y=True,
-                path=False, best_estimator=None, max_feature=None, alpha_ns_scaling=False, active_ols=False,
+                path=False, best_estimator=None, max_feature=None, alpha_ns_scaling=False, active_alpha_0=False, active_ols=False,
                 dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, error=False, probline=0.317/2, 
                 conv=False, conv_finegrid=False, local_finegrid=False, local_finegrid_size=0.03, local_finegrid_dz=0.001):
     # Check if D_rest is necessary but not given
@@ -1134,7 +1226,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         zgrid = np.array([zinput_float])
         local_finegrid = False
         zpeak0 = zinput_float
-        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
+        D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
         D_allz = D_zinput.reshape((1, D_zinput.shape[0], D_zinput.shape[1]))
     
     else:
@@ -1168,10 +1260,10 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
 
         # check if D_allz is given
         if D_allz is None:
-            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
         elif zinput:
             # if D_allz and zinput are provided, create a new D_allz array and insert D_zinput to the correct location
-            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_zinput = apply_redshift1(D_rest, zinput_float, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv)
             D_allz_copy = D_allz.copy()
             D_allz = np.zeros((D_allz_copy.shape[0]+1, D_allz_copy.shape[1], D_allz_copy.shape[2]), dtype=D_allz_copy.dtype)
             D_allz[:D_allz_copy.shape[0]] = D_allz_copy
@@ -1183,6 +1275,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
     coefs_zgrid = np.zeros((zgrid.shape[0], D_allz.shape[1]))
     bs_zgrid = np.zeros_like(zgrid)
     chi2_zgrid = np.zeros_like(zgrid) + np.inf
+    larslasso_step_zgrid = np.zeros_like(zgrid)
 
     # loop over zgrid to calculate best-fit and chi2
     for i in range(zgrid.shape[0]):
@@ -1192,13 +1285,14 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
             b = 0.0
             cost = np.sum((model - spec_data)**2/err_data**2)
         else:
-            coefs, b, model, cost = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
+            coefs, b, model, cost, larslasso_step = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
                                                 center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,  
                                                 max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
-                                                max_feature=max_feature, active_ols=active_ols)
+                                                max_feature=max_feature, active_alpha_0=active_alpha_0, active_ols=active_ols)
         coefs_zgrid[i] = coefs
         bs_zgrid[i] = b
         chi2_zgrid[i] = cost
+        larslasso_step_zgrid[i] = larslasso_step
 
     # if not zinput:
     idx_zpeak0 = np.argmin(chi2_zgrid)
@@ -1213,10 +1307,11 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         z_localmin = max((zpeak0-local_finegrid_size, zmin))
         zgrid_local = np.arange(z_localmin, z_localmax, local_finegrid_dz)
         local_length = zgrid_local.shape[0]
-        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filters=filters, conv=conv_finegrid)
+        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, Nrestframe_dicts=Nrestframe_dicts, filters=filters, conv=conv_finegrid)
         coefs_zgrid_local = np.zeros((local_length, D_allz.shape[1]))
         bs_zgrid_local = np.zeros_like(zgrid_local)
         chi2_zgrid_local = np.zeros_like(zgrid_local) + np.inf
+        larslasso_step_zgrid_local = np.zeros_like(zgrid_local)
 
         for j in range(local_length):
             D_this_localz = D_all_localz[j]
@@ -1225,13 +1320,14 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
                 b = 0.0
                 cost = np.sum((model - spec_data)**2/err_data**2)
             else:
-                coefs, b, model, cost = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
+                coefs, b, model, cost, larslasso_step = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=lars_positive, 
                                                     center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator,  
                                                     max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, 
-                                                    max_feature=max_feature, active_ols=active_ols)
+                                                    max_feature=max_feature, active_alpha_0=active_alpha_0, active_ols=active_ols)
             coefs_zgrid_local[j] = coefs
             bs_zgrid_local[j] = b
             chi2_zgrid_local[j] = cost
+            larslasso_step_zgrid_local[j] = larslasso_step
 
         # combine coefs, chi2, D_allz, zgrid with local arrays
         zgrid_copy = zgrid.copy()
@@ -1242,9 +1338,13 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         coefs_zgrid_copy = coefs_zgrid.copy()
         bs_zgrid_copy = bs_zgrid.copy()
         chi2_zgrid_copy = chi2_zgrid.copy()
+        larslasso_steps_copy = larslasso_step_zgrid.copy()
+
         coefs_zgrid = np.vstack((coefs_zgrid_copy, coefs_zgrid_local))
         bs_zgrid = np.hstack((bs_zgrid_copy, bs_zgrid_local))
         chi2_zgrid = np.hstack((chi2_zgrid_copy, chi2_zgrid_local))
+        larslasso_step_zgrid = np.hstack((larslasso_steps_copy, larslasso_step_zgrid_local))
+
         D_allz_copy = D_allz.copy()
         D_allz = np.zeros((zgrid.shape[0], D_allz_copy.shape[1], D_allz_copy.shape[2]), dtype=D_allz_copy.dtype)
         D_allz[:D_allz_copy.shape[0]] = D_allz_copy
@@ -1253,6 +1353,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         coefs_zgrid = coefs_zgrid[idx_zgrid_new]
         bs_zgrid = bs_zgrid[idx_zgrid_new]
         chi2_zgrid = chi2_zgrid[idx_zgrid_new]
+        larslasso_step_zgrid = larslasso_step_zgrid[idx_zgrid_new]
         D_allz = D_allz[idx_zgrid_new]
 
         if zinput:
@@ -1285,7 +1386,7 @@ def fit_zgrid_coefs(lamb_data, spec_data, err_data, lamb_D, D_rest=None, D_allz=
         # likelihood = likelihood/area
         zbest = np.trapezoid((likelihood*zgrid), zgrid)/area
 
-    return zpeak1, zbest, zlower, zupper, coefs_zgrid, b_zpeak, model_zpeak, zgrid, chi2_zgrid
+    return zpeak1, zbest, zlower, zupper, coefs_zgrid, b_zpeak, model_zpeak, zgrid, chi2_zgrid, larslasso_step_zgrid
 
 
 

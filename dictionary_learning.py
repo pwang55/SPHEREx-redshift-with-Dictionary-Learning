@@ -37,21 +37,31 @@ def fitting_mp(child, cat, lamb_rest, D_rest, D_allz, zgrid, filters, fit_zgrid_
     zlow_fitted = np.zeros(Ngal)
     zhigh_fitted = np.zeros(Ngal)
     coefs_fitted = np.zeros((Ngal, D_rest.shape[0]))
+    chi2_fitted = np.zeros(Ngal) + np.inf
+    last_alpha = np.zeros(Ngal)
 
     for i in range(Ngal):
         if verbose:
             print(f"\rValidation Catalog Segment Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
         spec_obs_i = np.ascontiguousarray(spec_obs[i])
         err_obs_i = np.ascontiguousarray(err_obs[i])
-        zpeak,zbest,zlow,zhigh,coefs,b,model,_,_ = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=False, 
+        fit_out = fx.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=False, 
                                                     zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+        zpeak, zbest, zlow, zhigh, coef, _, model, zgrid, _, alpha_path = fit_out
+
         zpeak_fitted[i] = zpeak
         zbest_fitted[i] = zbest
         zlow_fitted[i] = zlow
         zhigh_fitted[i] = zhigh
-        coefs_fitted[i] = coefs
+        coefs_fitted[i] = coef
+        # idx_minchi2 = np.argmin(chi2_zgrid)
+        chi2_fitted[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
+        if alpha_path.shape[0] == 1:
+            last_alpha[i] = alpha_path[0]
+        else:
+            last_alpha[i] = alpha_path[-2]
 
-    results = (zpeak_fitted, zbest_fitted, zlow_fitted, zhigh_fitted, coefs_fitted)
+    results = (zpeak_fitted, zbest_fitted, zlow_fitted, zhigh_fitted, coefs_fitted, chi2_fitted, last_alpha)
     child.send(results)
     child.close()
 
@@ -82,6 +92,7 @@ if __name__ == "__main__":
     # Dictionary input configurations
     dict_read_from_file = config.dict_read_from_file
     add_constant = config.add_constant
+    Nrestframe_dicts = config.Nrestframe_dicts
     fix_dicts = config.fix_dicts
     Ndict = config.Ndict
     num_EAZY_as_dict = config.num_EAZY_as_dict
@@ -98,6 +109,7 @@ if __name__ == "__main__":
     remove_old_ab_info = config.remove_old_ab_info
     epochs_to_keep = config.epochs_to_keep
     scale_past_data = config.scale_past_data
+    correct_nodata_offset = config.correct_nodata_offset
     separate_training_weights = config.separate_training_weights
     lamb_obs_sep = 3.79 # TEMP
     weights1 = config.weights1
@@ -114,6 +126,9 @@ if __name__ == "__main__":
     train_best_estimator = config.train_best_estimator
     fit_best_estimator = config.fit_best_estimator
     max_feature = config.max_feature
+    active_alpha_0_training = config.active_alpha_0_training
+    active_alpha_0_fitting = config.active_alpha_0_fitting
+    active_alpha_0_fitting_penalty = config.active_alpha_0_fitting_penalty
     active_OLS_training = config.active_OLS_training
     active_OLS_fitting = config.active_OLS_fitting
     center_Xy = config.center_Xy
@@ -158,6 +173,7 @@ if __name__ == "__main__":
     else:
         central_wavelengths_tab = np.loadtxt(filter_central_wavelengths, dtype={'names': ('filter','wavelengths'), 'formats': ('U25','f8')})
         lamb_obs = central_wavelengths_tab['wavelengths']
+    Nfilt = len(lamb_obs)   # number of datapoints, even if not convolving with filters
     # lamb_obs = cat.lamb_obs
     ztrue = cat.ztrue
     spec_obs = cat.spec_obs
@@ -240,6 +256,7 @@ if __name__ == "__main__":
         lamb_rest = np.arange(0.2,6.0,0.01)
         lamb_rest_resolution = 0.01
 
+    # lamb_rest_idx = np.arange(len(lamb_rest))
     # Read EAZY templates for dictionary initialization and also evaluation test if they are given
     if eazy_templates_location is not None and eazy_templates_dir.is_dir():
         templates_EAZY = fx.load_EAZY(lamb_rest, eazy_templates_location)
@@ -282,7 +299,9 @@ if __name__ == "__main__":
     print(f"Ndict = {Ndict}")
     print(f"Add constant: {add_constant}")
     if training and (fix_dicts > 0):
-        print(f"Fix {fix_dicts} dictionaries from the end of list")
+        print(f"Fixed dictionaries: {fix_dicts} (from the end of list)")
+    if training and (Nrestframe_dicts>0):
+        print(f"Rest frame dictionaries: {Nrestframe_dicts} (from the start of list)")
     print(f"Centering: {centering}")    
     if training:
         print('')
@@ -292,6 +311,7 @@ if __name__ == "__main__":
             print(f"Remove old AB info: {remove_old_ab_info}, Scale past data: {scale_past_data}")
         else:
             print(f"Remove old AB info: {remove_old_ab_info} (keeps {epochs_to_keep} Epochs)")
+        print(f'Correct nodata offset: {correct_nodata_offset}')
         if separate_training_weights:
             print(f"Separate training weights: Bands 1-4 x{weights1}, Bands 5-6 x{weights2}")
         if use_DESI_flag:
@@ -307,6 +327,7 @@ if __name__ == "__main__":
                 print(f"\talpha (training) = {larslasso_alpha_train} + {larslasso_alpha_sigma_train} sigma")
                 print(f"\talpha (fitting) = {larslasso_alpha_fit} + {larslasso_alpha_sigma_fit} sigma")
                 print(f"\tPositive = {larslasso_positive}")
+                print(f"\tactive alpha zero = {active_alpha_0_training}/{active_alpha_0_fitting} (Fitting penalty: {active_alpha_0_fitting_penalty & active_alpha_0_fitting})")
                 print(f"\tcenter_Xy = {center_Xy}")
                 print(f"\tunit_X = {unit_X}")
                 print(f"\tunit_y = {unit_y}")
@@ -324,6 +345,7 @@ if __name__ == "__main__":
         if fitting:
             if larslasso:    
                 print(f"\talpha (fitting) = {larslasso_alpha_fit} + {larslasso_alpha_sigma_fit} sigma")
+                print(f"\tactive alpha zero = {active_alpha_0_fitting}")
                 print(f"\tPositive = {larslasso_positive}")
                 print(f"\tcenter_Xy = {center_Xy}")
                 print(f"\tunit_X = {unit_X}")
@@ -369,6 +391,10 @@ if __name__ == "__main__":
 
             # coefs_history = np.zeros((Nepoch, Ngal, D_rest.shape[0]))
 
+        # TESTING sort training set by SNR
+        # ynorms = np.linalg.norm(snr, axis=1)
+        # idx_shuffle = np.argsort(ynorms)[::-1]
+
         # Training iterations
         for i_epoch in range(Nepoch):
 
@@ -396,15 +422,23 @@ if __name__ == "__main__":
                 # fit this spectrum and obtain the redshift
                 spec_obs_i = np.ascontiguousarray(spec_obs[i_gal])
                 err_obs_i = np.ascontiguousarray(err_obs[i_gal])
-                z, _, zlow, zhigh, coefs, b, model, _, _= fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, D_rest=D_rest, zinput=zinput, 
+                fit_out = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, D_rest=D_rest, zinput=zinput, 
                                                                         zgrid=zgrid, filters=filters, **fit_zgrid_training_kws)
+                z, _, zlow, zhigh, coefs, b, model, _, _, _ = fit_out
+
                 # update the spectral dictionary using the residuals between the model and data
                 residual = spec_obs[i_gal] - model
                 if not separate_training_weights:
-                    j_update = np.where((lamb_rest > np.min(lamb_obs)/(1+z)) & (lamb_rest < np.max(lamb_obs)/(1+z)))[0]     # Find overlap between this spectra in rest-frame and dictionary
+                    j_update = np.where((lamb_rest >= np.min(lamb_obs)/(1+z)) & (lamb_rest <= np.max(lamb_obs)/(1+z)))[0]     # Find overlap between this spectra in rest-frame and dictionary
+                    j_longerside = np.where(lamb_rest > np.max(lamb_obs)/(1+z))[0]    # index for lamb_rest that has wavelength longer than overlap regions
+                    j_shorterside = np.where(lamb_rest < np.min(lamb_obs)/(1+z))[0]
                 else:
-                    j_update1 = np.where((lamb_rest > np.min(lamb_obs)/(1+z)) & (lamb_rest < lamb_obs_sep/(1+z)))[0]     # rest frame wavelength of detector 1~4
-                    j_update2 = np.where((lamb_rest > lamb_obs_sep/(1+z)) & (lamb_rest < np.max(lamb_obs)/(1+z)))[0]     # detector 5~6
+                    j_update1 = np.where((lamb_rest >= np.min(lamb_obs)/(1+z)) & (lamb_rest <= lamb_obs_sep/(1+z)))[0]     # rest frame wavelength of detector 1~4
+                    j_update2 = np.where((lamb_rest >= lamb_obs_sep/(1+z)) & (lamb_rest <= np.max(lamb_obs)/(1+z)))[0]     # detector 5~6
+                    j_longerside1 = np.where(lamb_rest > lamb_obs_sep/(1+z))[0]    # index for lamb_rest that has wavelength longer than overlap regions
+                    j_shorterside1 = np.where((lamb_rest < np.min(lamb_obs)/(1+z)))[0]
+                    j_longerside2 = np.where(lamb_rest > np.max(lamb_obs)/(1+z))[0]    # index for lamb_rest that has wavelength longer than overlap regions
+                    j_shorterside2 = np.where((lamb_rest < lamb_obs_sep/(1+z)))[0]
                 # j_update_outside = np.setdiff1d(np.arange(len(lamb_rest)), j_update)
 
                 if not separate_training_weights:
@@ -422,11 +456,19 @@ if __name__ == "__main__":
                 if not separate_training_weights:
                     spec_rest = model_rest.copy()
                     spec_rest[j_update] = interpolated_spec_obs    # replace the overlapped part with interpolated observed spectra
+                    if correct_nodata_offset:
+                        spec_rest[j_longerside] += interpolated_residual[-1] # add the offset at the end of update region to longer wavelength side
+                        spec_rest[j_shorterside] += interpolated_residual[0]
                 else:
                     spec_rest1 = model_rest.copy()
                     spec_rest2 = model_rest.copy()
                     spec_rest1[j_update1] = interpolated_spec_obs1    # replace the overlapped part with interpolated observed spectra
                     spec_rest2[j_update2] = interpolated_spec_obs2    # replace the overlapped part with interpolated observed spectra
+                    if correct_nodata_offset:
+                        spec_rest1[j_longerside1] += interpolated_residual1[-1] # add the offset at the end of update region to longer wavelength side
+                        spec_rest1[j_shorterside1] += interpolated_residual1[0]
+                        spec_rest2[j_longerside2] += interpolated_residual2[-1] # add the offset at the end of update region to longer wavelength side
+                        spec_rest2[j_shorterside2] += interpolated_residual2[0]
                 # this will be considered the observed spectra for update purpose; outside overlap range just use model (no update)
 
                 if scale_past_data:
@@ -551,7 +593,31 @@ if __name__ == "__main__":
     # Make template plots and multiplots
     makefigs = dplots.diagnostic_plots(output_dirname=plots_dir)
     makefigs.template_plots(lamb_rest=lamb_rest, D_rest=D_rest[:Ndict], D_rest_initial=D_rest_initial[:Ndict])
+    
+    # fit training data with fix redshift and training setting to make sparsity plot and chi2 plot
+    ynorms = np.linalg.norm(spec_obs/err_obs, axis=1)
+    chi2_training = np.zeros(Ngal)
+    last_alpha_training = np.zeros(Ngal)
+    coefs_training = np.zeros((Ngal, D_rest.shape[0]))
+    for i in range(Ngal):
+        fit_out_training = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, zinput=ztrue[i_gal], 
+                                                zgrid=zgrid, filters=filters, **fit_zgrid_training_kws)
+        _, _, _, _, coef_training, _, model_training, _, _, alpha_path_training = fit_out_training
+        chi2_training[i] = np.sum(((spec_obs[i]-model_training)/err_obs[i])**2)
+        coefs_training[i] = coef_training
+        if alpha_path_training.shape[0] == 1:
+            last_alpha_training[i] = alpha_path_training[0]
+        else:
+            last_alpha_training[i] = alpha_path_training[-2]
 
+    makefigs.chi2_plots(ynorms=ynorms, reduced_chi2s_fixz=chi2_training/Nfilt, last_alpha_fixz=last_alpha_training, catalog='training_setting')
+    # Sparsity plot
+    if larslasso:
+        makefigs.sparsity_report(coefs_trained=coefs_training, 
+                                 ynorm=ynorms, 
+                                 max_feature=max_feature, 
+                                 add_constant=add_constant, 
+                                 catalog='_training_result')
 
     # pre-redshift D_rest into all redshift in zgrid
     D_allz = fx.apply_redshift_all(D_rest, zgrid=zgrid, lamb_in=lamb_rest, lamb_out=lamb_obs, 
@@ -570,6 +636,9 @@ if __name__ == "__main__":
         zlow_trained = np.zeros(Ngal)
         zhigh_trained = np.zeros(Ngal)
         coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
+        chi2_trained = np.zeros(Ngal) + np.inf
+        last_alpha = np.zeros(Ngal)
+        # larslasso_step_trained = np.zeros(Ngal)
 
         print('')
         for i in range(Ngal):
@@ -578,32 +647,113 @@ if __name__ == "__main__":
             print(f"\rTraining Catalog Redshift Estimation: {i+1}/{Ngal} sources", end="")
             # fit this spectrum and obtain the redshift
             zinput = False
-            zpeak,zbest,zlow,zhigh,coefs,b,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
+            fit_out = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
                                                     zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+            zpeak, zbest, zlow, zhigh, coefs, b, model, _, _, alpha_path = fit_out
+
             # store the redshift
             zpeak_trained[i] = zpeak
             zbest_trained[i] = zbest
             zlow_trained[i] = zlow
             zhigh_trained[i] = zhigh
             coefs_trained[i] = coefs
+            if alpha_path.shape[0] == 1:
+                last_alpha[i] = alpha_path[0]
+            else:
+                last_alpha[i] = alpha_path[-2]
+            # idx_minchi2 = np.argmin(chi2_zgrid)
+            # chi2_trained[i] = chi2_zgrid[idx_minchi2]
+            # larslasso_step_trained[i] = larslasso_step_zgrid[idx_minchi2]
+            # calculate chi2 without penalty
+            chi2_trained[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
 
-        # for comparison, fit again with original template
-        zpeak_initial = np.zeros(Ngal)
-        zbest_initial = np.zeros(Ngal)
-        # print('\nTraining Catalog Untrained Redshift Estimation')
+        if larslasso:
+            makefigs.sparsity_report(coefs_trained=coefs_trained, 
+                                     ynorm=ynorms, 
+                                     max_feature=max_feature, 
+                                     add_constant=add_constant, 
+                                     catalog='_training_set_fit')
+
+        # fit training catalog with fix z
+        # zpeak_trained = np.zeros(Ngal)
+        # zbest_trained = np.zeros(Ngal)
+        # zlow_trained = np.zeros(Ngal)
+        # zhigh_trained = np.zeros(Ngal)
+        # coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
+        coefs_trained_fixz = np.zeros((Ngal, D_rest.shape[0]))
+        chi2_trained_fixz = np.zeros(Ngal) + np.inf
+        last_alpha_fixz = np.zeros(Ngal)
+        # larslasso_step_trained_fixz = np.zeros(Ngal)
+
+        print('')
         for i in range(Ngal):
-            print(f"\rTraining Catalog Untrained Redshift Estimation: {i+1}/{Ngal} sources", end="")
+            # update with number of galaxies processed
+            # print(f"\r\t{i+1}/{Ngal} spectra", end="")
+            print(f"\rTraining Catalog Redshift Estimation (fix z=ztrue): {i+1}/{Ngal} sources", end="")
             # fit this spectrum and obtain the redshift
-            zinput = False
-            spec_obs_i = np.ascontiguousarray(spec_obs[i])
-            err_obs_i = np.ascontiguousarray(err_obs[i])
-            zpeak_bi,zbest_bi,zlow_bi,zhigh_bi,coefs_bi,b_bi,model_bi,_,_ = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest_initial,
-                                                D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
-            zpeak_initial[i] = zpeak_bi
-            zbest_initial[i] = zbest_bi
+            zinput = ztrue[i]
+            fit_zgrid_validation_kws['error'] = False
+            fit_out = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, 
+                                                zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+            _, _, _, _, coefs_fixz, _, model, _, _, alpha_path = fit_out
+            # print(chi2_zgrid.shape)
+            # store the redshift
+            # zpeak_trained[i] = zpeak
+            # zbest_trained[i] = zbest
+            # zlow_trained[i] = zlow
+            # zhigh_trained[i] = zhigh
+            # coefs_trained[i] = coefs
+            # idx_minchi2_fixz = np.argmin(chi2_zgrid)
+            # chi2_trained_fixz[i] = chi2_zgrid[idx_minchi2_fixz]
+            chi2_trained_fixz[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
+            coefs_trained_fixz[i] = coefs_fixz
+            if alpha_path.shape[0] == 1:
+                last_alpha_fixz[i] = alpha_path[0]
+            else:
+                last_alpha_fixz[i] = alpha_path[-2]
+            # larslasso_step_trained_fixz[i] = larslasso_step_zgrid[idx_minchi2_fixz]
+            fit_zgrid_validation_kws['error'] = True
+        if larslasso:
+            makefigs.sparsity_report(coefs_trained=coefs_trained_fixz, 
+                                     ynorm=ynorms, 
+                                     max_feature=max_feature, 
+                                     add_constant=add_constant, 
+                                     catalog='_training_set_fixz')
 
-        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zpeak_initial, z_trained=zpeak_trained, zmin=zmin, zmax=zmax, catalog='training_zpeak')
-        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zbest_initial, z_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='training_zbest')
+        # print('\nTraining Catalog Untrained Redshift Estimation')
+        if fit_initial_dicts:
+            # for comparison, fit again with original template
+            zpeak_initial = np.zeros(Ngal)
+            zbest_initial = np.zeros(Ngal)
+            for i in range(Ngal):
+                print(f"\rTraining Catalog Untrained Redshift Estimation: {i+1}/{Ngal} sources", end="")
+                # fit this spectrum and obtain the redshift
+                zinput = False
+                spec_obs_i = np.ascontiguousarray(spec_obs[i])
+                err_obs_i = np.ascontiguousarray(err_obs[i])
+                fit_out = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest_initial,
+                                                    D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+                zpeak_bi, zbest_bi, _, _, _, _, _, _, _, _ = fit_out
+
+                zpeak_initial[i] = zpeak_bi
+                zbest_initial[i] = zbest_bi
+        else:
+            zpeak_initial = None
+            zbest_initial = None
+        
+        # dofs = Nfilt - larslasso_step_trained
+        # reduced_chi2_trained = chi2_trained/dofs
+        ave_residual = chi2_trained/Nfilt
+        # dofs_fixz = Nfilt - larslasso_step_trained_fixz
+        # reduced_chi2_trained_fixz = chi2_trained_fixz/dofs_fixz
+        ave_residual_fixz = chi2_trained_fixz/Nfilt
+
+        # ynorms = np.linalg.norm(spec_obs/err_obs, axis=1)
+        makefigs.chi2_plots(ynorms=ynorms, reduced_chi2s=ave_residual, reduced_chi2s_fixz=ave_residual_fixz, 
+                            last_alpha=last_alpha, last_alpha_fixz=last_alpha_fixz, catalog='training')
+
+        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zpeak_initial, z_trained=zpeak_trained, zmin=zmin, zmax=zmax, catalog='training_zpeak', fit_initial=fit_initial_dicts)
+        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zbest_initial, z_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='training_zbest', fit_initial=fit_initial_dicts)
 
         # save estimated redshifts
         np.savez_compressed(output_dir / 'estimated_redshifts_training.npz', ztrue=ztrue, zpeak=zpeak_trained, zbest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
@@ -614,6 +764,40 @@ if __name__ == "__main__":
         cat = fx.Catalog(pathfile=validation_catalog, Ndat=Ndat_validation, centering=centering)
         ztrue = cat.ztrue
         print('')
+
+        # first fit with fix z regardless of multiprocessing or not
+        lamb_obs = cat.lamb_obs
+        spec_obs = cat.spec_obs
+        # spec_obs_original = cat.spec_obs_original
+        err_obs = cat.err_obs
+        # desi_flag = cat.desi_flag
+        # snr = cat.snr_i
+        Ngal = len(ztrue)
+
+        chi2_trained_fixz = np.zeros(Ngal) + np.inf
+        last_alpha_fixz = np.zeros(Ngal)
+        # larslasso_step_trained_fixz = np.zeros(Ngal)
+
+        # print('')
+        for i in range(Ngal):
+            # update with number of galaxies processed
+            # print(f"\r\t{i+1}/{Ngal} spectra", end="")
+            print(f"\rValidation Catalog Redshift Estimation (fix z=ztrue):\t\t{i+1}/{Ngal} sources", end="")
+            # fit this spectrum and obtain the redshift
+            zinput = ztrue[i]
+            fit_zgrid_validation_kws['error'] = False
+            fit_out = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz,
+                                                    zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+            _, _, _, _, _, _, model, _, _, alpha_path = fit_out
+
+            # idx_minchi2_fixz = np.argmin(chi2_zgrid)
+            chi2_trained_fixz[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
+            if alpha_path.shape[0] == 1:
+                last_alpha_fixz[i] = alpha_path[0]
+            else:
+                last_alpha_fixz[i] = alpha_path[-2]
+            # larslasso_step_trained_fixz[i] = larslasso_step_zgrid[idx_minchi2_fixz]
+            fit_zgrid_validation_kws['error'] = True
 
         if not multiprocess:
 
@@ -630,22 +814,34 @@ if __name__ == "__main__":
             zlow_trained = np.zeros(Ngal)
             zhigh_trained = np.zeros(Ngal)
             coefs_trained = np.zeros((Ngal, D_rest.shape[0]))
+            chi2_trained = np.zeros(Ngal) + np.inf
+            last_alpha = np.zeros(Ngal)
+            # larslasso_step_trained = np.zeros(Ngal)
 
-            # print('')
+            print('')
             for i in range(Ngal):
                 # update with number of galaxies processed
                 # print(f"\r\t{i+1}/{Ngal} spectra", end="")
                 print(f"\rValidation Catalog Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
                 # fit this spectrum and obtain the redshift
                 zinput = False
-                zpeak,zbest,zlow,zhigh,coefs,b,model,_,_ = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
+                fit_out = fit_zgrid(lamb_obs, spec_obs[i], err_obs[i], lamb_rest, D_rest=D_rest, D_allz=D_allz, zinput=zinput, 
                                                         zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+                zpeak, zbest, zlow, zhigh, coefs, b, model, _, _, alpha_path = fit_out
+
                 # store the redshift
                 zpeak_trained[i] = zpeak
                 zbest_trained[i] = zbest
                 zlow_trained[i] = zlow
                 zhigh_trained[i] = zhigh
                 coefs_trained[i] = coefs
+                # idx_minchi2 = np.argmin(chi2_zgrid)
+                chi2_trained[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
+                if alpha_path.shape[0] == 1:
+                    last_alpha[i] = alpha_path[0]
+                else:
+                    last_alpha[i] = alpha_path[-2]
+                # larslasso_step_trained[i] = larslasso_step_zgrid[idx_minchi2]
 
             # for comparison, fit again with original template
             if training and fit_initial_dicts:
@@ -660,8 +856,10 @@ if __name__ == "__main__":
                     zinput = False
                     spec_obs_i = np.ascontiguousarray(spec_obs[i])
                     err_obs_i = np.ascontiguousarray(err_obs[i])
-                    zpeak_bi,zbest_bi,zlow_bi,zhigh_bi,coefs_bi,b_bi,model_bi,_,_ = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest_initial,
+                    fit_out = fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest, D_rest=D_rest_initial,
                                                         D_allz=D_allz_initial, zinput=zinput, zgrid=zgrid, filters=filters, **fit_zgrid_validation_kws)
+                    zpeak_bi, zbest_bi, zlow_bi, zhigh_bi, _, _, _, _, _, _ = fit_out
+
                     zpeak_initial[i] = zpeak_bi
                     zbest_initial[i] = zbest_bi
                     zlow_initial[i] = zlow_bi
@@ -673,6 +871,7 @@ if __name__ == "__main__":
                 zhigh_initial = None
 
         else:   # multiprocessing
+            print('')
 
             segment_Ndat = Ndat_validation // mp_threads
             parents_mplist = []
@@ -702,15 +901,20 @@ if __name__ == "__main__":
             zlow_mplist = []
             zhigh_mplist = []
             coefs_mplist = []
+            chi2_mplist = []
+            last_alpha_mplist = []
+            # larslasso_step_mplist = []
 
             for mi in range(mp_threads):
-                zpeak_mi, zbest_mi, zlow_mi, zhigh_mi, coefs_mi = parents_mplist[mi].recv()
+                zpeak_mi, zbest_mi, zlow_mi, zhigh_mi, coefs_mi, chi2_mi, last_alpha_mi = parents_mplist[mi].recv()
                 zpeak_mplist.append(zpeak_mi)
                 zbest_mplist.append(zbest_mi)
                 zlow_mplist.append(zlow_mi)
                 zhigh_mplist.append(zhigh_mi)
                 coefs_mplist.append(coefs_mi)
-                
+                chi2_mplist.append(chi2_mi)
+                last_alpha_mplist.append(last_alpha_mi)
+                # larslasso_step_mplist.append(larslasso_step_mi)
             try:
                 for mi in range(mp_threads):
                     process_mplist[mi].join()
@@ -725,7 +929,9 @@ if __name__ == "__main__":
             zlow_trained = np.hstack(zlow_mplist)
             zhigh_trained = np.hstack(zhigh_mplist)
             coefs_trained = np.vstack(coefs_mplist) # coefs_trained is 2d array
-
+            chi2_trained = np.hstack(chi2_mplist)
+            last_alpha = np.hstack(last_alpha_mplist)
+            # larslasso_step_trained = np.hstack(larslasso_step_mplist)
 
             if training and fit_initial_dicts:
                 print('')
@@ -785,29 +991,40 @@ if __name__ == "__main__":
                 zhigh_initial = None
 
 
-        plotting_training = (training & fit_training_catalog)
+        # plotting_training = (training & fit_training_catalog)
+
+        # dofs = Nfilt - larslasso_step_trained
+        # reduced_chi2_trained = chi2_trained/dofs
+        ave_residual = chi2_trained/Nfilt
+        # dofs_fixz = Nfilt - larslasso_step_trained_fixz
+        # reduced_chi2_trained_fixz = chi2_trained_fixz/dofs_fixz
+        ave_residual_fixz = chi2_trained_fixz/Nfilt
+        ynorms = np.linalg.norm(cat.spec_obs/cat.err_obs, axis=1)
+
+        makefigs.chi2_plots(ynorms=ynorms, reduced_chi2s=ave_residual, reduced_chi2s_fixz=ave_residual_fixz, 
+                            last_alpha=last_alpha, last_alpha_fixz=last_alpha_fixz, catalog='fitting')
 
         # Create zphot vs zspec plots
-        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zpeak_initial, z_trained=zpeak_trained, zmin=zmin, zmax=zmax, catalog='fitting_zpeak', training=plotting_training)
-        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zbest_initial, z_trained=zbest_trained, zmin=zmin, zmax=zmax, catalog='fitting_zbest', training=plotting_training)
+        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zpeak_initial, z_trained=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, zmin=zmin, zmax=zmax, catalog='fitting_zpeak', fit_initial=fit_initial_dicts)
+        makefigs.zp_zs_plots(ztrue=ztrue, z_initial=zbest_initial, z_trained=zbest_trained, zl=zlow_trained, zh=zhigh_trained, zmin=zmin, zmax=zmax, catalog='fitting_zbest', fit_initial=fit_initial_dicts)
 
         # Create 6 bin uncertainty fraction and zscore plots
         makefigs.uncertainty_binplots(zs=ztrue, zp=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                    zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', training=plotting_training)
+                                    zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', fit_initial=fit_initial_dicts)
         makefigs.uncertainty_binplots(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                    zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', training=plotting_training)
+                                    zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', fit_initial=fit_initial_dicts)
         # Create 6 bin zphot vs zspec hexbin plots
         makefigs.hexbin_binplot(zs=ztrue, zp=zpeak_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                    zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', training=plotting_training)
+                                    zp0=zpeak_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zpeak', fit_initial=fit_initial_dicts)
         makefigs.hexbin_binplot(zs=ztrue, zp=zbest_trained, zl=zlow_trained, zh=zhigh_trained, \
-                                    zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', training=plotting_training)
+                                    zp0=zbest_initial, zl0=zlow_initial, zh0=zhigh_initial, ztype='zbest', fit_initial=fit_initial_dicts)
         # save estimated redshifts
         np.savez_compressed(output_dir / 'estimated_redshifts.npz', ztrue=ztrue, zpeak=zpeak_trained, zbest=zbest_trained, zlow=zlow_trained, zhigh=zhigh_trained, 
                 zpeak_initial=zpeak_initial, zbest_initial=zbest_initial, zlow_initial=zlow_initial, zhigh_initial=zhigh_initial, coefs=coefs_trained, idx_cali=idx_cali)
 
         # Sparsity plot
         if larslasso:
-            makefigs.sparsity_report(coefs_trained=coefs_trained, max_feature=max_feature, add_constant=add_constant)
+            makefigs.sparsity_report(coefs_trained=coefs_trained, ynorm=ynorms, max_feature=max_feature, add_constant=add_constant)
 
         # select galaxy examples based on redshift error bin
         idx_examples = []
@@ -879,6 +1096,8 @@ if __name__ == "__main__":
                 'Training Best Estimator': train_best_estimator,
                 'Fitting Best Estimator': fit_best_estimator,
                 'max_feature': max_feature,
+                'active_alpha_0_training': active_alpha_0_training,
+                'active_alpha_0_fitting': active_alpha_0_fitting,
                 'active_OLS_training': active_OLS_training,
                 'active_OLS_fitting': active_OLS_fitting,
                 'center_Xy': center_Xy,
