@@ -650,7 +650,11 @@ def hexbin_binplot(zs=None,
                    dat=None, 
                    gridsize=100, 
                    sigtype='highlow',
+<<<<<<< HEAD
                    zlims=[3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+=======
+                   zlims=[3.0, 3.0, 3.0, 3.0, 3.0, 3.0],
+>>>>>>> multiple_dicts
                    ztype='zbest', 
                    fit_initial=False,
                    savefig=False, 
