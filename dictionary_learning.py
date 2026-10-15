@@ -201,6 +201,9 @@ def main():
     # Fitting configurations
     fitting = config.fitting
     marginalization = config.marginalization
+    marginalization_min_alpha = config.marginalization_min_alpha
+    if marginalization_min_alpha is None:
+        marginalization_min_alpha = 0.0
     probline = config.probline
     fit_training_catalog = config.fit_training_catalog
     fit_initial_dicts = config.fit_initial_dicts
@@ -450,7 +453,10 @@ def main():
             print('Testing Zgrid: On')
     else:
         if fitting:
-            print(f"\tmarginalization = {marginalization}")
+            if marginalization:
+                print(f"\tmarginalization = True (min alpha={marginalization_min_alpha})")
+            else:
+                print("marginalization = False")
             if larslasso:    
                 print(f"\talpha (fitting) = {larslasso_alpha_fit} + {larslasso_alpha_sigma_fit} sigma")
                 print(f"\tactive alpha zero = {active_alpha_0_fitting}")
@@ -1028,17 +1034,8 @@ def main():
             # fit this spectrum and obtain the redshift
             # zinput = False
             zinput = ztrue[i]
-            if not marginalization:
-                fit_out = libs.fit_zgrid(
-                    lamb_obs, 
-                    spec_obs[i], 
-                    err_obs[i], 
-                    dictionary=dicts,
-                    zinput=zinput, 
-                    zgrid=zgrid, 
-                    filters=filters, 
-                    **fit_zgrid_validation_kws)
-            else:
+            alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
+            if marginalization and alpha_i >= marginalization_min_alpha:
                 fit_out = libs.marginalize_zgrid(
                     lamb_obs,
                     spec_obs[i],
@@ -1049,6 +1046,16 @@ def main():
                     filters=filters,
                     **marginalize_zgrid_validation_kws
                 )
+            else:
+                fit_out = libs.fit_zgrid(
+                    lamb_obs, 
+                    spec_obs[i], 
+                    err_obs[i], 
+                    dictionary=dicts,
+                    zinput=zinput, 
+                    zgrid=zgrid, 
+                    filters=filters, 
+                    **fit_zgrid_validation_kws)
             # zpeak, zbest, zlow, zhigh, coefs, b, model, _, _, alpha_path = fit_out
             zpeak = fit_out['zpeak']
             zbest = fit_out['zbest']
@@ -1154,24 +1161,8 @@ def main():
                 zinput = False
                 spec_obs_i = np.ascontiguousarray(spec_obs[i])
                 err_obs_i = np.ascontiguousarray(err_obs[i])
-                if not marginalization:
-                    fit_out = libs.fit_zgrid(
-                        lamb_obs, 
-                        spec_obs_i, 
-                        err_obs_i, 
-                        lamb_D=lamb_rest, 
-                        D_rest=D_rest_initial, 
-                        D_sys=D_sys_initial, 
-                        D_allz=D_allz_initial, 
-                        D_rest_alphas=D_rest_alphas, 
-                        D_rest_alphas_ndict=D_rest_alphas_ndict,
-                        D_sys_alphas=D_sys_alphas,
-                        D_sys_alphas_ndict=D_sys_alphas_ndict,
-                        zinput=zinput, 
-                        zgrid=zgrid, 
-                        filters=filters, 
-                        **fit_zgrid_validation_kws)
-                else:
+                alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
+                if marginalization and alpha_i >= marginalization_min_alpha:
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs_i, 
@@ -1189,7 +1180,23 @@ def main():
                         filters=filters, 
                         **marginalize_zgrid_validation_kws
                     )
-                
+                else:
+                    fit_out = libs.fit_zgrid(
+                        lamb_obs, 
+                        spec_obs_i, 
+                        err_obs_i, 
+                        lamb_D=lamb_rest, 
+                        D_rest=D_rest_initial, 
+                        D_sys=D_sys_initial, 
+                        D_allz=D_allz_initial, 
+                        D_rest_alphas=D_rest_alphas, 
+                        D_rest_alphas_ndict=D_rest_alphas_ndict,
+                        D_sys_alphas=D_sys_alphas,
+                        D_sys_alphas_ndict=D_sys_alphas_ndict,
+                        zinput=zinput, 
+                        zgrid=zgrid, 
+                        filters=filters, 
+                        **fit_zgrid_validation_kws)
                 # zpeak_bi, zbest_bi, _, _, _, _, _, _, _, _ = fit_out
                 zpeak_bi = fit_out['zpeak']
                 zbest_bi = fit_out['zbest']
@@ -1351,17 +1358,8 @@ def main():
                 # fit this spectrum and obtain the redshift
                 # zinput = False
                 zinput = ztrue[i]
-                if not marginalization:
-                    fit_out = libs.fit_zgrid(
-                        lamb_obs, 
-                        spec_obs[i], 
-                        err_obs[i], 
-                        dictionary=dicts,
-                        zinput=zinput, 
-                        zgrid=zgrid, 
-                        filters=filters, 
-                        **fit_zgrid_validation_kws)
-                else:
+                alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
+                if marginalization and alpha_i >= marginalization_min_alpha:
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs[i], 
@@ -1372,6 +1370,16 @@ def main():
                         filters=filters, 
                         **marginalize_zgrid_validation_kws                        
                     )
+                else:
+                    fit_out = libs.fit_zgrid(
+                        lamb_obs, 
+                        spec_obs[i], 
+                        err_obs[i], 
+                        dictionary=dicts,
+                        zinput=zinput, 
+                        zgrid=zgrid, 
+                        filters=filters, 
+                        **fit_zgrid_validation_kws)
                 # zpeak, zbest, zlow, zhigh, coefs, b, model, _, _, alpha_path = fit_out
                 zpeak = fit_out['zpeak']
                 zbest = fit_out['zbest']
@@ -1413,17 +1421,8 @@ def main():
                     zinput = False
                     spec_obs_i = np.ascontiguousarray(spec_obs[i])
                     err_obs_i = np.ascontiguousarray(err_obs[i])
-                    if not marginalization:
-                        fit_out = libs.fit_zgrid(
-                            lamb_obs, 
-                            spec_obs_i, 
-                            err_obs_i, 
-                            dictionary=dicts, 
-                            zinput=zinput, 
-                            zgrid=zgrid, 
-                            filters=filters, 
-                            **fit_zgrid_validation_kws)
-                    else:
+                    alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
+                    if marginalization and alpha_i >= marginalization_min_alpha:
                         fit_out = libs.marginalize_zgrid(
                             lamb_obs, 
                             spec_obs_i, 
@@ -1433,6 +1432,17 @@ def main():
                             zgrid=zgrid, 
                             filters=filters, 
                             **marginalize_zgrid_validation_kws)
+                    else:
+                        fit_out = libs.fit_zgrid(
+                            lamb_obs, 
+                            spec_obs_i, 
+                            err_obs_i, 
+                            dictionary=dicts, 
+                            zinput=zinput, 
+                            zgrid=zgrid, 
+                            filters=filters, 
+                            **fit_zgrid_validation_kws)
+
                         
                     zpeak_bi = fit_out['zpeak']
                     zbest_bi = fit_out['zbest']
@@ -1455,18 +1465,20 @@ def main():
         else:   
             print('')
             cat_val = libs.Catalog(pathfile=validation_catalog, centering=centering)
-            if not marginalization:
-                validation_kws = fit_zgrid_validation_kws
-            else:
-                validation_kws = marginalize_zgrid_validation_kws
+            # if not marginalization:
+            #     validation_kws = fit_zgrid_validation_kws
+            # else:
+            #     validation_kws = marginalize_zgrid_validation_kws
             fit_cat_results = libs.fit_cat_mp(
                 cat=cat_val,
                 lamb_obs=lamb_obs,
                 zgrid=zgrid,
                 dictionary=dicts,
                 nthread=mp_threads,
-                fit_validation_kws=validation_kws,
+                fit_zgrid_validation_kws=fit_zgrid_validation_kws,
+                marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                 marginalization=marginalization,
+                marginalization_min_alpha=marginalization_min_alpha,
                 filters=filters
             )
 
@@ -1499,8 +1511,10 @@ def main():
                     D_sys_alphas=D_sys_alphas,
                     D_sys_alphas_ndict=D_sys_alphas_ndict,
                     nthread=mp_threads,
-                    fit_validation_kws=validation_kws,
+                    fit_zgrid_validation_kws=fit_zgrid_validation_kws,
+                    marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                     marginalization=marginalization,
+                    marginalization_min_alpha=marginalization_min_alpha,
                     filters=filters
                 )
 

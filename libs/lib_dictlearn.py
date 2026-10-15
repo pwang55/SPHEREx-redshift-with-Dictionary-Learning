@@ -101,6 +101,7 @@ class Configs:
         self.fitting = self.Fitting['fitting']
         self.marginalization = self.Fitting['marginalization']
         self.marginalized_model = self.Fitting['marginalized_model']
+        self.marginalization_min_alpha = self.Fitting['marginalization_min_alpha']
         self.cdf_tol = self.Fitting['cdf_tol']
         self.cdf_max_steps = self.Fitting['cdf_max_steps']
         self.probline = self.Fitting['probline']
@@ -332,6 +333,7 @@ class Dictionary:
         self.lamb_rest_end = lamb_rest_end
         self.lamb_rest_step = lamb_rest_step
         self.D_allz = None
+        self.D_allz_filtered = False
         # if dictfile is provided, read from file and set up variables
         if dictfile is not None:
             self.read_dict(dictfile)
@@ -680,8 +682,8 @@ class Dictionary:
             zgrid = generate_zgrid()
         Ndicts_now, _ = self.ndict_from_alpha(alpha=alpha, alpha_sys=alpha_sys)
         D_allz = apply_redshift_all(self.D_rest[:Ndicts_now], zgrid, self.lamb_rest, lamb_obs, filters=filters, conv=conv)
-        # if self.D_sys is not None:
-            # D_allz = np.concatenate((np.broadcast_to(self.D_sys[:Ndicts_sys_now], (D_allz.shape[0], *self.D_sys[:Ndicts_sys_now].shape)), D_allz), axis=1)
+        if conv:
+            self.D_allz_filtered = True
         self.D_allz = D_allz
         return D_allz
 
@@ -696,6 +698,8 @@ class Dictionary:
             D_allz = apply_redshift_all(self.D_rest[:Ndicts_now], zgrid, self.lamb_rest, lamb_obs, filters=filters, conv=conv)
         else:
             D_allz = self.D_allz
+        if conv:
+            self.D_allz_filtered = True
         if self.D_sys is not None:
             D_zgrid = np.concatenate((np.broadcast_to(self.D_sys[:Ndicts_sys_now], (D_allz.shape[0], *self.D_sys[:Ndicts_sys_now].shape)), D_allz), axis=1)
         self.D_zgrid =D_zgrid
@@ -1037,7 +1041,12 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-
+        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
+            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
+            # TEMP
+            if (conv != dictionary.D_allz_filtered):
+                print(f'libs.fit_zgrid: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+            D_allz = dictionary.make_D_allz(lamb_data, zgrid=zgrid, filters=filters, conv=conv)
     # determine original Ndict
     if D_rest is not None:
         Ndicts_original = D_rest.shape[0]
@@ -1368,7 +1377,12 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-
+        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
+            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
+            # TEMP
+            if (conv != dictionary.D_allz_filtered):
+                print(f'libs.marginalize_zgrid: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+            D_allz = dictionary.make_D_allz(lamb_data, zgrid=zgrid, filters=filters, conv=conv)
     # determine original Ndict
     if D_rest is not None:
         Ndicts_original = D_rest.shape[0]
@@ -1572,13 +1586,16 @@ def fit_zgrid_multiprocessing(child,
                               D_rest_alphas_ndict=None, 
                               D_sys_alphas=None,
                               D_sys_alphas_ndict=None,
-                              fit_validation_kws=None, 
+                              fit_zgrid_validation_kws=None, 
+                              marginalize_zgrid_validation_kws=None,
                               zgrid=None, 
                               filters=None,
                               marginalization=False,
                               marginalize_active_only=True,
+                              marginalization_min_alpha=0.0,
                               pz=None,
                               verbose=False):
+    conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
     if cat is not None:
         lamb_obs = cat.lamb_obs
         ztrue = cat.ztrue
@@ -1594,8 +1611,12 @@ def fit_zgrid_multiprocessing(child,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-        if D_allz is None:
-            D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid)
+        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
+            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
+            # TEMP
+            if (conv != dictionary.D_allz_filtered):
+                print(f'libs.fit_zgrid_multiprocessing: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+            D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
 
     Ndict = D_rest.shape[0]
     if D_sys is not None:
@@ -1621,7 +1642,8 @@ def fit_zgrid_multiprocessing(child,
             print(f"\rSegment Redshift Estimation:\t\t{i+1}/{Ngal} sources", end="")
         spec_obs_i = np.ascontiguousarray(spec_obs[i])
         err_obs_i = np.ascontiguousarray(err_obs[i])
-        if marginalization:
+        alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
+        if marginalization and alpha_i >= marginalization_min_alpha:
             fit_out = marginalize_zgrid(lamb_obs, 
                                         spec_obs_i,
                                         err_obs_i,
@@ -1638,7 +1660,7 @@ def fit_zgrid_multiprocessing(child,
                                         filters=filters, 
                                         pz=pz, 
                                         marginalize_active_only=marginalize_active_only,
-                                        **fit_validation_kws
+                                        **marginalize_zgrid_validation_kws
                                         )
 
         else:
@@ -1657,7 +1679,7 @@ def fit_zgrid_multiprocessing(child,
                                 zgrid=zgrid, 
                                 filters=filters, 
                                 pz=pz, 
-                                **fit_validation_kws)
+                                **fit_zgrid_validation_kws)
             # zpeak, zbest, zlow, zhigh, coef, _, model, zgrid, _, alpha_path = fit_out
         zpeak = fit_out['zpeak']
         zbest = fit_out['zbest']
@@ -1694,10 +1716,27 @@ def fit_zgrid_multiprocessing(child,
 
 
 # function to fit entire catalog using multiprocessing
-def fit_cat_mp(cat, lamb_obs=None, zgrid=None, dictionary=None, nthread=4, 
-               lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
-               D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
-               fit_validation_kws=None, filters=None, marginalization=False, pz=None, marginalize_active_only=True):
+def fit_cat_mp(cat, 
+               lamb_obs=None, 
+               zgrid=None, 
+               dictionary=None, 
+               nthread=4, 
+               lamb_rest=None, 
+               D_rest=None, 
+               D_sys=None, 
+               D_allz=None, 
+               D_rest_alphas=None, 
+               D_rest_alphas_ndict=None, 
+               D_sys_alphas=None, 
+               D_sys_alphas_ndict=None,
+               fit_zgrid_validation_kws=None, 
+               marginalize_zgrid_validation_kws=None, 
+               filters=None, 
+               marginalization=False, 
+               marginalize_active_only=True, 
+               marginalization_min_alpha=0.0,
+               pz=None, 
+               ):
 
     if lamb_obs is None:
         lamb_obs = cat.lamb_obs
@@ -1706,16 +1745,22 @@ def fit_cat_mp(cat, lamb_obs=None, zgrid=None, dictionary=None, nthread=4,
     err_obs = cat.err_obs
     Ndat = cat.Ndat
 
-    fit_validation_kws = fit_validation_kws or {}
-    fit_validation_kws.setdefault('alpha', 0.0)
-    fit_validation_kws.setdefault('alpha_sig', 1.0)
-    if not marginalization:
-        fit_validation_kws.setdefault('larslasso', True)
-        fit_validation_kws.setdefault('positive', True)
-        fit_validation_kws.setdefault('error', True)
-    else:
-        fit_validation_kws.setdefault('zoutput', 'zpeak')
+    fit_zgrid_validation_kws = fit_zgrid_validation_kws or {}
+    fit_zgrid_validation_kws.setdefault('alpha', 0.0)
+    fit_zgrid_validation_kws.setdefault('alpha_sig', 1.0)
+    fit_zgrid_validation_kws.setdefault('conv', False)
+    # if not marginalization:
+    fit_zgrid_validation_kws.setdefault('larslasso', True)
+    fit_zgrid_validation_kws.setdefault('positive', True)
+    fit_zgrid_validation_kws.setdefault('error', True)
 
+    marginalize_zgrid_validation_kws = marginalize_zgrid_validation_kws or {}
+    marginalize_zgrid_validation_kws.setdefault('alpha', 0.0)
+    marginalize_zgrid_validation_kws.setdefault('alpha_sig', 1.0)
+    marginalize_zgrid_validation_kws.setdefault('zoutput', 'zpeak')
+    marginalize_zgrid_validation_kws.setdefault('conv', False)
+
+    conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
     if dictionary is not None:
         lamb_rest = dictionary.lamb_rest
         D_rest = dictionary.D_rest
@@ -1725,13 +1770,21 @@ def fit_cat_mp(cat, lamb_obs=None, zgrid=None, dictionary=None, nthread=4,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-        if D_allz is None:
-            D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid)
+        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
+            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
+            # TEMP
+            if (conv != dictionary.D_allz_filtered):
+                print(f'libs.fit_cat_mp: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+            D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
     Ndict_total = 0
     if D_rest is not None:
         Ndict_total = Ndict_total + D_rest.shape[0]
     if D_sys is not None:
         Ndict_total = Ndict_total + D_sys.shape[0]
+
+    # in case dictionary and D_allz are not provided, build it here
+    if D_allz is None:
+        D_allz = apply_redshift_all(D_rest, zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv)
 
     # sort catalog by ynorm and partition them roughly equally to nthread bins so the subprocess runtime are roughly equal
     ys = spec_obs/err_obs
@@ -1767,11 +1820,13 @@ def fit_cat_mp(cat, lamb_obs=None, zgrid=None, dictionary=None, nthread=4,
                                   'D_rest_alphas_ndict': D_rest_alphas_ndict,
                                   'D_sys_alphas': D_sys_alphas,
                                   'D_sys_alphas_ndict': D_sys_alphas_ndict,
-                                  'fit_validation_kws': fit_validation_kws,
+                                  'fit_zgrid_validation_kws': fit_zgrid_validation_kws,
+                                  'marginalize_zgrid_validation_kws': marginalize_zgrid_validation_kws,
                                   'zgrid': zgrid,
                                   'filters': filters,
                                   'marginalization': marginalization, 
                                   'marginalize_active_only': marginalize_active_only,
+                                  'marginalization_min_alpha': marginalization_min_alpha,
                                   'pz': pz, 
                                   'verbose': group_verbose[mi]})
         process_mplist.append(p_mi)

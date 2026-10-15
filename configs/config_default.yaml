@@ -80,7 +80,8 @@ Fitting:
     fitting: True                                   # If False, skip fitting validation catalog
     marginalization: False                          # whether to marginalize the coefficients when constructing zpdf
     marginalized_model: zpeak                       # which redshift is used to output best-fit model
-    cdf_tol: 1.0E-3                                   # tolerance for calculating MVNCDF during each marginalization
+    marginalization_min_alpha: 0.01                 # zpdf of objects with alpha smaller than this will not be marginalized
+    cdf_tol: 1.0E-3                                 # tolerance for calculating MVNCDF during each marginalization
     cdf_max_steps: 200                              # allowed max iteration steps for calculating MVNCDF during each marginalization
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2
     median_ynorm_train:                             # apply a median filter to training spectra only for calculating their ynorm
