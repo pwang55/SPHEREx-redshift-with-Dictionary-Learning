@@ -202,8 +202,11 @@ def main():
     fitting = config.fitting
     marginalization = config.marginalization
     marginalization_min_alpha = config.marginalization_min_alpha
+    marginalization_max_alpha = config.marginalization_max_alpha
     if marginalization_min_alpha is None:
         marginalization_min_alpha = 0.0
+    if marginalization_max_alpha is None:
+        marginalization_max_alpha = np.inf
     probline = config.probline
     fit_training_catalog = config.fit_training_catalog
     fit_initial_dicts = config.fit_initial_dicts
@@ -454,7 +457,7 @@ def main():
     else:
         if fitting:
             if marginalization:
-                print(f"\tmarginalization = True (min alpha={marginalization_min_alpha})")
+                print(f"\tmarginalization = True (alpha={marginalization_min_alpha}~{marginalization_max_alpha})")
             else:
                 print("marginalization = False")
             if larslasso:    
@@ -1035,7 +1038,7 @@ def main():
             # zinput = False
             zinput = ztrue[i]
             alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
-            if marginalization and alpha_i >= marginalization_min_alpha:
+            if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
                 fit_out = libs.marginalize_zgrid(
                     lamb_obs,
                     spec_obs[i],
@@ -1162,7 +1165,7 @@ def main():
                 spec_obs_i = np.ascontiguousarray(spec_obs[i])
                 err_obs_i = np.ascontiguousarray(err_obs[i])
                 alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
-                if marginalization and alpha_i >= marginalization_min_alpha:
+                if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs_i, 
@@ -1359,7 +1362,7 @@ def main():
                 # zinput = False
                 zinput = ztrue[i]
                 alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
-                if marginalization and alpha_i >= marginalization_min_alpha:
+                if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs[i], 
@@ -1422,7 +1425,7 @@ def main():
                     spec_obs_i = np.ascontiguousarray(spec_obs[i])
                     err_obs_i = np.ascontiguousarray(err_obs[i])
                     alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
-                    if marginalization and alpha_i >= marginalization_min_alpha:
+                    if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
                         fit_out = libs.marginalize_zgrid(
                             lamb_obs, 
                             spec_obs_i, 
@@ -1479,6 +1482,7 @@ def main():
                 marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                 marginalization=marginalization,
                 marginalization_min_alpha=marginalization_min_alpha,
+                marginalization_max_alpha=marginalization_max_alpha,
                 filters=filters
             )
 
@@ -1515,6 +1519,7 @@ def main():
                     marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                     marginalization=marginalization,
                     marginalization_min_alpha=marginalization_min_alpha,
+                    marginalization_max_alpha=marginalization_max_alpha,
                     filters=filters
                 )
 

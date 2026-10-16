@@ -102,6 +102,7 @@ class Configs:
         self.marginalization = self.Fitting['marginalization']
         self.marginalized_model = self.Fitting['marginalized_model']
         self.marginalization_min_alpha = self.Fitting['marginalization_min_alpha']
+        self.marginalization_max_alpha = self.Fitting['marginalization_max_alpha']
         self.cdf_tol = self.Fitting['cdf_tol']
         self.cdf_max_steps = self.Fitting['cdf_max_steps']
         self.probline = self.Fitting['probline']
@@ -1593,6 +1594,7 @@ def fit_zgrid_multiprocessing(child,
                               marginalization=False,
                               marginalize_active_only=True,
                               marginalization_min_alpha=0.0,
+                              marginalization_max_alpha=np.inf,
                               pz=None,
                               verbose=False):
     conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
@@ -1643,7 +1645,7 @@ def fit_zgrid_multiprocessing(child,
         spec_obs_i = np.ascontiguousarray(spec_obs[i])
         err_obs_i = np.ascontiguousarray(err_obs[i])
         alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
-        if marginalization and alpha_i >= marginalization_min_alpha:
+        if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
             fit_out = marginalize_zgrid(lamb_obs, 
                                         spec_obs_i,
                                         err_obs_i,
@@ -1735,6 +1737,7 @@ def fit_cat_mp(cat,
                marginalization=False, 
                marginalize_active_only=True, 
                marginalization_min_alpha=0.0,
+               marginalization_max_alpha=np.inf,
                pz=None, 
                ):
 
@@ -1827,6 +1830,7 @@ def fit_cat_mp(cat,
                                   'marginalization': marginalization, 
                                   'marginalize_active_only': marginalize_active_only,
                                   'marginalization_min_alpha': marginalization_min_alpha,
+                                  'marginalization_max_alpha': marginalization_max_alpha,
                                   'pz': pz, 
                                   'verbose': group_verbose[mi]})
         process_mplist.append(p_mi)
