@@ -287,6 +287,7 @@ class Catalog:
         self.desi_flag = desi_flag[idx_sort]
         self.snr = snr[idx_sort]
         self.spherex_id = spherex_id[idx_sort]
+        self.idx_sort = idx_sort
 
         self.pathfile = pathfile
         self.centering = centering
@@ -709,6 +710,11 @@ class Dictionary:
         return D_zgrid
     
 
+def get_D_rest_list_idx(alpha, D_rest_list_alphas):
+    idx = np.searchsorted(-D_rest_list_alphas, -alpha, side="left") - 1
+    idx = np.clip(idx, 0, len(D_rest_list_alphas) - 2)
+    return int(idx)
+
 # generate zgrid with (1+z) scaling
 def generate_zgrid(zmin=0.0, zmax=3.0, dz=0.002, scale_1plusz=True, testing_zgrid=False):
     if not testing_zgrid:
@@ -1016,8 +1022,8 @@ def apply_redshift_all(D, zgrid, lamb_in, lamb_out, Ndict_noshift=0, filters=Non
 
 # Fit data with dictionary across the whole redshift grid
 # @jit(nopython=True, fastmath=True)
-def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
-              lamb_D=None, D_rest=None, D_sys=None, D_allz=None, 
+def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
+              lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
               D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
               D_rest_list=None, D_allz_list=None, D_rest_list_alphas=None,
               zgrid=None, zinput=None, filters=None, median_ynorm=None, median_spectra=None,
@@ -1035,12 +1041,11 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
     if D_rest is None and D_allz is None and D_sys is None and dictionary is None and D_rest_list is None and D_allz_list is None:
         raise ValueError("D_rest, D_allz, D_sys, D_rest_list, D_allz_list are all not given")
 
-    # TESTING
     use_D_allz_list = False
     if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
         use_D_allz_list = True
-        if lamb_D is None:
-            raise ValueError("lamb_D should be provided when using D_rest_list!")
+        if lamb_rest is None:
+            raise ValueError("lamb_rest should be provided when using D_rest_list!")
         D_rest = None
         D_rest_alphas = None
         D_rest_alphas_ndict = None
@@ -1050,11 +1055,11 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         if D_allz_list is None:
             D_allz_list = []
             for i in range(len(D_rest_list)):
-                D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_D, lamb_data, filters=filters, conv=conv))
+                D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv))
 
     # if dictionary object is provided, read info from it
     elif dictionary is not None:
-        lamb_D = dictionary.lamb_rest
+        lamb_rest = dictionary.lamb_rest
         D_rest = dictionary.D_rest
         D_rest_alphas = dictionary.D_rest_alphas
         D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
@@ -1066,7 +1071,7 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
             # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
             if (conv != dictionary.D_allz_filtered):
                 print(f'libs.fit_zgrid: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
-            D_allz = dictionary.make_D_allz(lamb_data, zgrid=zgrid, filters=filters, conv=conv)
+            D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
     # determine original Ndict
     if use_D_allz_list:
     # if in D_rest_list mode, Ndicts_original is max number of dictionary
@@ -1086,14 +1091,14 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
     # if median_spectra is set to > 1, pre-process input signal with a median filter
     if (median_spectra is not None) and (median_spectra > 1):
-        spec_data = median_filter(spec_data, size=median_spectra)
+        spec_obs = median_filter(spec_obs, size=median_spectra)
 
     # calculate ynorm first and use D_rest_alphas to determine how many templates to use
     if D_rest_alphas is not None or D_sys_alphas is not None or use_D_allz_list:
         if (median_ynorm is None) or (median_ynorm == 1):
-            ynorm = np.linalg.norm(spec_data/err_data)
+            ynorm = np.linalg.norm(spec_obs/err_obs)
         else:
-            ynorm = np.linalg.norm(median_filter(spec_data, size=median_ynorm)/err_data)
+            ynorm = np.linalg.norm(median_filter(spec_obs, size=median_ynorm)/err_obs)
         if ynorm != 0:
             alpha_now = 1/ynorm
         else:
@@ -1117,7 +1122,7 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
             D_allz = D_allz_list[idx_D_list]
             Ndicts_now = D_allz.shape[1]
         # else:
-            # D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
+            # D_allz = apply_redshift_all(D_rest, zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv)
     else:
         Ndicts_now = Ndicts_original
 
@@ -1144,7 +1149,7 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         fix_at_zinput = True
         idx_zinput = None
         if D_rest is not None:
-            D_zinput = apply_redshift(D_rest, zinput, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_zinput = apply_redshift(D_rest, zinput, lamb_rest, lamb_obs, filters=filters, conv=conv)
             if D_sys is not None:
                 D_zinput = np.vstack((D_sys, D_zinput))
         else:
@@ -1175,10 +1180,10 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
         # check if D_allz is given
         if D_allz is None:
-            D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_allz = apply_redshift_all(D_rest, zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv)
         # if D_allz and zinput are provided, create a new D_allz array and insert D_zinput to the correct location
         elif zinput is not None:
-            D_zinput = apply_redshift(D_rest, zinput, lamb_D, lamb_data, filters=filters, conv=conv)
+            D_zinput = apply_redshift(D_rest, zinput, lamb_rest, lamb_obs, filters=filters, conv=conv)
             D_allz = np.insert(D_allz, idx_zinput, D_zinput, axis=0)
 
         # insert D_sys to the beginning of each element of D_allz
@@ -1196,10 +1201,10 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
     if (median_ynorm is not None) and (median_ynorm > 1) and (median_spectra is None):
         # adjust alpha_sig
-        original_1sig = 1/np.linalg.norm(spec_data/err_data)
+        original_1sig = 1/np.linalg.norm(spec_obs/err_obs)
         if np.isnan(original_1sig):
             original_1sig = 0.2
-        new_1sig = 1/np.linalg.norm(median_filter(spec_data, size=median_ynorm)/err_data)
+        new_1sig = 1/np.linalg.norm(median_filter(spec_obs, size=median_ynorm)/err_obs)
         if np.isnan(new_1sig):
             new_1sig = 0.2
         one_sig_ratio = new_1sig/original_1sig
@@ -1209,15 +1214,15 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
     for i in range(zgrid.shape[0]):
         D_thisz = D_allz[i]
         if not larslasso:
-            coef, model, _ = fit_models_ols(D_thisz, spec_data, err_data)
+            coef, model, _ = fit_models_ols(D_thisz, spec_obs, err_obs)
             b = np.array(0.0)
-            cost = np.sum((model - spec_data)**2/err_data**2)
+            cost = np.sum((model - spec_obs)**2/err_obs**2)
             alpha_path = np.array([0.0])
         else:
             # D_thisz = np.ascontiguousarray(D_thisz)
-            # spec_data = np.ascontiguousarray(spec_data)
-            # err_data = np.ascontiguousarray(err_data)
-            coef, b, model, cost, _, alpha_path = fit_model_larslasso(D_thisz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+            # spec_obs = np.ascontiguousarray(spec_obs)
+            # err_obs = np.ascontiguousarray(err_obs)
+            coef, b, model, cost, _, alpha_path = fit_model_larslasso(D_thisz, spec_obs, err_obs, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
                                                 center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
                                                 max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, max_feature=max_feature, 
                                                 active_alpha_0=active_alpha_0, active_alpha_0_fitting_penalty=active_alpha_0_fitting_penalty, active_ols=active_ols)
@@ -1244,7 +1249,7 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         z_localmin = max((zpeak0-local_finegrid_size, zmin))
         zgrid_local = np.arange(z_localmin, z_localmax, local_finegrid_dz)
         local_length = zgrid_local.shape[0]
-        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_D, lamb_data, filters=filters, conv=conv_finegrid)
+        D_all_localz = apply_redshift_all(D_rest, zgrid_local, lamb_rest, lamb_obs, filters=filters, conv=conv_finegrid)
         if D_sys is not None:
             D_all_localz = np.concatenate((np.broadcast_to(D_sys, (D_all_localz.shape[0], *D_sys.shape)), D_all_localz), axis=1)
         coefs_zgrid_local = np.zeros((local_length, D_allz.shape[1]))
@@ -1257,14 +1262,14 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         for j in range(local_length):
             D_this_localz = D_all_localz[j]
             if not larslasso:
-                coef, model, _ = fit_models_ols(D_this_localz, spec_data, err_data)
+                coef, model, _ = fit_models_ols(D_this_localz, spec_obs, err_obs)
                 b = np.array(0.0)
-                cost = np.sum((model - spec_data)**2/err_data**2)
+                cost = np.sum((model - spec_obs)**2/err_obs**2)
                 alpha_path = np.array([0.0])
             else:
-                # spec_data = np.ascontiguousarray(spec_data)
-                # err_data = np.ascontiguousarray(err_data)
-                coef, b, model, cost, _, alpha_path = fit_model_larslasso(D_this_localz, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+                # spec_obs = np.ascontiguousarray(spec_obs)
+                # err_obs = np.ascontiguousarray(err_obs)
+                coef, b, model, cost, _, alpha_path = fit_model_larslasso(D_this_localz, spec_obs, err_obs, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
                                                     center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
                                                     max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, max_feature=max_feature, 
                                                     active_alpha_0=active_alpha_0, active_alpha_0_fitting_penalty=active_alpha_0_fitting_penalty, active_ols=active_ols)
@@ -1384,8 +1389,8 @@ def fit_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
 
 # fit zgrid that marginalize over coefficients
-def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
-                      lamb_D=None, D_rest=None, D_sys=None, D_allz=None, 
+def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
+                      lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
                       D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
                       D_rest_list=None, D_allz_list=None, D_rest_list_alphas=None,
                       zgrid=None, zinput=None, filters=None, median_ynorm=None, median_spectra=None,
@@ -1393,12 +1398,11 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
                       dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, probline=0.317/2, conv=False,
                       zoutput=None, pz=None, marginalize_active_only=True):
 
-    # TESTING
     use_D_allz_list = False
     if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
         use_D_allz_list = True
-        if lamb_D is None:
-            raise ValueError("lamb_D should be provided when using D_rest_list!")
+        if lamb_rest is None:
+            raise ValueError("lamb_rest should be provided when using D_rest_list!")
         D_rest = None
         D_rest_alphas = None
         D_rest_alphas_ndict = None
@@ -1408,11 +1412,11 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
         if D_allz_list is None:
             D_allz_list = []
             for i in range(len(D_rest_list)):
-                D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_D, lamb_data, filters=filters, conv=conv))
+                D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv))
 
     # if dictionary object is provided, read info from it
     elif dictionary is not None:
-        lamb_D = dictionary.lamb_rest
+        lamb_rest = dictionary.lamb_rest
         D_rest = dictionary.D_rest
         D_rest_alphas = dictionary.D_rest_alphas
         D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
@@ -1424,7 +1428,7 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
             # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
             if (conv != dictionary.D_allz_filtered):
                 print(f'libs.marginalize_zgrid: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
-            D_allz = dictionary.make_D_allz(lamb_data, zgrid=zgrid, filters=filters, conv=conv)
+            D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
     # determine original Ndict
     if use_D_allz_list:
     # if in D_rest_list mode, Ndicts_original is max number of dictionary
@@ -1444,26 +1448,25 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
     # if median_spectra is set to > 1, pre-process input signal with a median filter
     if (median_spectra is not None) and (median_spectra > 1):
-        spec_data = median_filter(spec_data, size=median_spectra)
+        spec_obs = median_filter(spec_obs, size=median_spectra)
 
     # calculate ynorm first and use D_rest_alphas to determine how many templates to use
     if D_rest_alphas is not None or D_sys_alphas is not None or use_D_allz_list:
         if (median_ynorm is None) or (median_ynorm == 1):
-            ynorm = np.linalg.norm(spec_data/err_data)
+            ynorm = np.linalg.norm(spec_obs/err_obs)
         else:
-            ynorm = np.linalg.norm(median_filter(spec_data, size=median_ynorm)/err_data)
+            ynorm = np.linalg.norm(median_filter(spec_obs, size=median_ynorm)/err_obs)
         if ynorm != 0:
             alpha_now = 1/ynorm
         else:
             # safeguard against some 0 flux objects having ynorm=0
             alpha_now = 0.2
     else:
-        ynorm = np.linalg.norm(spec_data/err_data)
+        ynorm = np.linalg.norm(spec_obs/err_obs)
 
     # if D_rest_alphas is given, calculate SNR and select the correct number of dictionaries to be used based on D_rest_alphas_ndict
     if D_rest_alphas is not None:
         idx_Ndicts_now = np.searchsorted(-D_rest_alphas, -alpha_now, side='right') - 1
-        # TEMP
         if idx_Ndicts_now < 0:
             idx_Ndicts_now = 0
         Ndicts_now = D_rest_alphas_ndict[idx_Ndicts_now]
@@ -1480,14 +1483,13 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
             D_allz = D_allz_list[idx_D_list]
             Ndicts_now = D_allz.shape[1]
         # else:
-            # D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
+            # D_allz = apply_redshift_all(D_rest, zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv)
     else:
         Ndicts_now = Ndicts_original
 
     # if D_sys_alphas is given, calculate SNR and select the correct number of sys dictionaries to be used based on D_sys_alphas_ndict
     if D_sys_alphas is not None:
         idx_Ndicts_sys_now = np.searchsorted(-D_sys_alphas, -alpha_now, side='right') - 1
-        # TEMP
         if idx_Ndicts_sys_now < 0:
             idx_Ndicts_sys_now = 0
         Ndicts_sys_now = D_sys_alphas_ndict[idx_Ndicts_sys_now]
@@ -1507,7 +1509,7 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
     # check if D_allz is given
     if D_allz is None:
-        D_allz = apply_redshift_all(D_rest, zgrid, lamb_D, lamb_data, filters=filters, conv=conv)
+        D_allz = apply_redshift_all(D_rest, zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv)
 
     # insert D_sys to the beginning of each element of D_allz
     if D_sys is not None:
@@ -1516,10 +1518,10 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
     # determine modified alpha_sig if median keywords are set
     if (median_ynorm is not None) and (median_ynorm > 1) and (median_spectra is None):
         # adjust alpha_sig
-        original_1sig = 1/np.linalg.norm(spec_data/err_data)
+        original_1sig = 1/np.linalg.norm(spec_obs/err_obs)
         if np.isnan(original_1sig):
             original_1sig = 0.2
-        new_1sig = 1/np.linalg.norm(median_filter(spec_data, size=median_ynorm)/err_data)
+        new_1sig = 1/np.linalg.norm(median_filter(spec_obs, size=median_ynorm)/err_obs)
         if np.isnan(new_1sig):
             new_1sig = 0.2
         one_sig_ratio = new_1sig/original_1sig
@@ -1528,15 +1530,15 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
     # calculate the actual alpha value used in evaluation
     alpha = alpha + 1/ynorm * alpha_sig
 
-    y = spec_data/err_data
+    y = spec_obs/err_obs
     log_pdfs = np.zeros(zgrid.shape[0])
     for i in range(zgrid.shape[0]):
         if marginalize_active_only:
             D_thisz = D_allz[i]
             coef, _, _, _, _, _ = fit_model_larslasso(
                 D_thisz, 
-                spec_data, 
-                err_data, 
+                spec_obs, 
+                err_obs, 
                 alpha=alpha, 
                 alpha_sig=alpha_sig, 
                 positive=True, 
@@ -1551,7 +1553,7 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
             D_thisz = D_allz[i]
 
         if D_thisz.shape[0] > 0:
-            X = (D_thisz/err_data).T
+            X = (D_thisz/err_obs).T
             log_pdfs[i] = logpdf_D_thisz(X, y, alpha=alpha, ynorm=ynorm, tol=cdf_tol, max_steps=cdf_max_steps)
         else:
             log_pdfs[i] = -np.inf
@@ -1587,14 +1589,14 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
             zout = z_pdfmax
         else:
             zout = zoutput
-        D_zout = apply_redshift(D_rest, zout, lamb_D, lamb_data, filters=filters, conv=conv)
+        D_zout = apply_redshift(D_rest, zout, lamb_rest, lamb_obs, filters=filters, conv=conv)
         if D_sys is not None:
             D_out = np.vstack((D_sys, D_zout))
         else:
             D_out = D_zout
         coef_zout, b_out, model_out, cost_out, _, alpha_path = fit_model_larslasso(D_out, 
-                                                                          spec_data, 
-                                                                          err_data, 
+                                                                          spec_obs, 
+                                                                          err_obs, 
                                                                           alpha=alpha, 
                                                                           alpha_sig=0.0, # alpha already includes alpha_sig from above
                                                                           positive=True, 
@@ -1617,11 +1619,6 @@ def marginalize_zgrid(lamb_data, spec_data, err_data, dictionary=None,
 
     return outputs_dict
 
-# TESTING
-def get_D_rest_list_idx(alpha, D_rest_list_alphas):
-    idx = np.searchsorted(-D_rest_list_alphas, -alpha, side="left") - 1
-    idx = np.clip(idx, 0, len(D_rest_list_alphas) - 2)
-    return int(idx)
 
 
 # fit_zgrid function for multiprocessing input
@@ -1651,8 +1648,13 @@ def fit_zgrid_multiprocessing(child,
                               marginalize_active_only=True,
                               marginalization_min_alpha=0.0,
                               marginalization_max_alpha=np.inf,
+                              return_zpdf=False,
                               pz=None,
                               verbose=False):
+
+    if zgrid is None and return_zpdf:
+        zgrid = generate_zgrid()
+
     conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
     if cat is not None:
         lamb_obs = cat.lamb_obs
@@ -1660,7 +1662,6 @@ def fit_zgrid_multiprocessing(child,
         spec_obs = cat.spec_obs
         err_obs = cat.err_obs
 
-    # TESTING
     use_D_allz_list = False
     if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
         use_D_allz_list = True
@@ -1711,6 +1712,10 @@ def fit_zgrid_multiprocessing(child,
     # cost_zgrid = np.zeros(Ngal) + np.inf
     # last_alpha = np.zeros(Ngal)
     ztrue_pit_fitted = np.zeros(Ngal)
+    if return_zpdf:
+        zpdf_fitted = np.zeros((Ngal, len(zgrid)))
+    else:
+        zpdf_fitted = None
 
     for i in range(Ngal):
         if verbose:
@@ -1723,7 +1728,7 @@ def fit_zgrid_multiprocessing(child,
             fit_out = marginalize_zgrid(lamb_obs, 
                                         spec_obs_i,
                                         err_obs_i,
-                                        lamb_D=lamb_rest,
+                                        lamb_rest=lamb_rest,
                                         D_rest=D_rest, 
                                         D_sys=D_sys, 
                                         D_allz=D_allz, 
@@ -1746,7 +1751,7 @@ def fit_zgrid_multiprocessing(child,
             fit_out = fit_zgrid(lamb_obs, 
                                 spec_obs_i, 
                                 err_obs_i, 
-                                lamb_D=lamb_rest, 
+                                lamb_rest=lamb_rest, 
                                 D_rest=D_rest, 
                                 D_sys=D_sys, 
                                 D_allz=D_allz, 
@@ -1786,13 +1791,15 @@ def fit_zgrid_multiprocessing(child,
         # idx_minchi2 = np.argmin(cost_zgrid)
         # cost_zgrid[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
         ztrue_pit_fitted[i] = ztrue_pit
+        if return_zpdf:
+            zpdf_fitted[i] = fit_out['pdf']
         # if alpha_path.shape[0] == 1:
         #     last_alpha[i] = alpha_path[0]
         # else:
         #     last_alpha[i] = alpha_path[-2]
 
     # results = (zpeak_fitted, zbest_fitted, zlow_fitted, zhigh_fitted, zstd_fitted, coefs_fitted, cost_zgrid, last_alpha, ztrue_pit_fitted)
-    results = (zpeak_fitted, zbest_fitted, zmed_fitted, zlow_fitted, zhigh_fitted, zstd_fitted, coefs_fitted, bs_fitted, ztrue_pit_fitted)
+    results = (zpeak_fitted, zbest_fitted, zmed_fitted, zlow_fitted, zhigh_fitted, zstd_fitted, coefs_fitted, bs_fitted, ztrue_pit_fitted, zpdf_fitted)
     child.send(results)
     child.close()
 
@@ -1822,7 +1829,10 @@ def fit_cat_mp(cat,
                marginalization_min_alpha=0.0,
                marginalization_max_alpha=np.inf,
                pz=None, 
+               return_zpdf=False,
                ):
+    if zgrid is None and return_zpdf:
+        zgrid = generate_zgrid()
 
     if lamb_obs is None:
         lamb_obs = cat.lamb_obs
@@ -1848,7 +1858,6 @@ def fit_cat_mp(cat,
 
     conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
 
-    # TESTING
     use_D_allz_list = False
     if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
         use_D_allz_list = True
@@ -1935,6 +1944,7 @@ def fit_cat_mp(cat,
                                   'marginalization_min_alpha': marginalization_min_alpha,
                                   'marginalization_max_alpha': marginalization_max_alpha,
                                   'pz': pz, 
+                                  'return_zpdf': return_zpdf,
                                   'verbose': group_verbose[mi]})
         process_mplist.append(p_mi)
         p_mi.start()
@@ -1948,8 +1958,12 @@ def fit_cat_mp(cat,
     coefs_final = np.zeros((Ndat, Ndict_total))
     bs_final = np.zeros_like(zpeak_final)
     ztrue_pit_final = np.zeros_like(zpeak_final)
+    if return_zpdf:
+        zpdf_final = np.zeros((Ndat, len(zgrid)))
+    else:
+        zpdf_final = None
     for mi in range(nthread):
-        zpeak_mi, zbest_mi, zmed_mi, zlow_mi, zhigh_mi, zstd_mi, coefs_mi, bs_mi, ztrue_pit_mi = parents_mplist[mi].recv()
+        zpeak_mi, zbest_mi, zmed_mi, zlow_mi, zhigh_mi, zstd_mi, coefs_mi, bs_mi, ztrue_pit_mi, zpdf_mi = parents_mplist[mi].recv()
         zpeak_final[group_idx[mi]] = zpeak_mi
         zbest_final[group_idx[mi]] = zbest_mi
         zmed_final[group_idx[mi]] = zmed_mi
@@ -1959,7 +1973,8 @@ def fit_cat_mp(cat,
         coefs_final[group_idx[mi]] = coefs_mi
         bs_final[group_idx[mi]] = bs_mi
         ztrue_pit_final[group_idx[mi]] = ztrue_pit_mi
-
+        if return_zpdf:
+            zpdf_final[group_idx[mi]] = zpdf_mi
     try:
         for mi in range(nthread):
             process_mplist[mi].join()
@@ -1977,13 +1992,15 @@ def fit_cat_mp(cat,
                     'zstd': zstd_final,
                     'coefs': coefs_final,
                     'bs': bs_final,
-                    'ztrue_pit': ztrue_pit_final}
+                    'ztrue_pit': ztrue_pit_final,
+                    'zpdf': zpdf_final,
+                    }
     return outputs_dict
 
 
 # function similar to fit_zgrid but only output specified redshift model and coef
-def fit_z_model(z, lamb_data, spec_data, err_data,
-                dictionary=None, lamb_D=None, D_rest=None, D_sys=None,
+def fit_z_model(z, lamb_obs, spec_obs, err_obs,
+                dictionary=None, lamb_rest=None, D_rest=None, D_sys=None,
                 D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
                 median_ynorm=None, median_spectra=None, path=True,
                 alpha=0.0, alpha_sig=0.0, positive=True, center_Xy=False, unit_X=True, unit_y=True, 
@@ -1996,7 +2013,7 @@ def fit_z_model(z, lamb_data, spec_data, err_data,
 
     # if dictionary object is provided, read info from it
     if dictionary is not None:
-        lamb_D = dictionary.lamb_rest
+        lamb_rest = dictionary.lamb_rest
         D_rest = dictionary.D_rest
         D_rest_alphas = dictionary.D_rest_alphas
         D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
@@ -2018,14 +2035,14 @@ def fit_z_model(z, lamb_data, spec_data, err_data,
 
     # if median_spectra is set to > 1, pre-process input signal with a median filter
     if (median_spectra is not None) and (median_spectra > 1):
-        spec_data = median_filter(spec_data, size=median_spectra)
+        spec_obs = median_filter(spec_obs, size=median_spectra)
 
     # calculate ynorm first and use D_rest_alphas to determine how many templates to use
     if D_rest_alphas is not None or D_sys_alphas is not None:
         if (median_ynorm is None) or (median_ynorm == 1):
-            ynorm = np.linalg.norm(spec_data/err_data)
+            ynorm = np.linalg.norm(spec_obs/err_obs)
         else:
-            ynorm = np.linalg.norm(median_filter(spec_data, size=median_ynorm)/err_data)
+            ynorm = np.linalg.norm(median_filter(spec_obs, size=median_ynorm)/err_obs)
         if ynorm != 0:
             alpha_now = 1/ynorm
         else:
@@ -2035,7 +2052,6 @@ def fit_z_model(z, lamb_data, spec_data, err_data,
     # if D_rest_alphas is given, calculate SNR and select the correct number of dictionaries to be used based on D_rest_alphas_ndict
     if D_rest_alphas is not None:
         idx_Ndicts_now = np.searchsorted(-D_rest_alphas, -alpha_now, side='right') - 1
-        # TEMP
         if idx_Ndicts_now < 0:
             idx_Ndicts_now = 0
         Ndicts_now = D_rest_alphas_ndict[idx_Ndicts_now]
@@ -2055,21 +2071,21 @@ def fit_z_model(z, lamb_data, spec_data, err_data,
     else:
         Ndicts_sys_now = Ndicts_sys_original
 
-    D_zinput = apply_redshift(D_rest, z, lamb_D, lamb_data, filters=filters, conv=conv)
+    D_zinput = apply_redshift(D_rest, z, lamb_rest, lamb_obs, filters=filters, conv=conv)
 
     # modify alpha_sig if median keywords are supplied
     if (median_ynorm is not None) and (median_ynorm > 1) and (median_spectra is None):
         # adjust alpha_sig
-        original_1sig = 1/np.linalg.norm(spec_data/err_data)
+        original_1sig = 1/np.linalg.norm(spec_obs/err_obs)
         if np.isnan(original_1sig):
             original_1sig = 0.2
-        new_1sig = 1/np.linalg.norm(median_filter(spec_data, size=median_ynorm)/err_data)
+        new_1sig = 1/np.linalg.norm(median_filter(spec_obs, size=median_ynorm)/err_obs)
         if np.isnan(new_1sig):
             new_1sig = 0.2
         one_sig_ratio = new_1sig/original_1sig
         alpha_sig = alpha_sig * one_sig_ratio
 
-    coef, b, model, cost, _, alpha_path = fit_model_larslasso(D_zinput, spec_data, err_data, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
+    coef, b, model, cost, _, alpha_path = fit_model_larslasso(D_zinput, spec_obs, err_obs, alpha=alpha, alpha_sig=alpha_sig, positive=positive, 
                                                               center_Xy=center_Xy, unit_X=unit_X, unit_y=unit_y, path=path, best_estimator=best_estimator, 
                                                               max_iter=200, decimals=10, alpha_ns_scaling=alpha_ns_scaling, max_feature=max_feature, 
                                                               active_alpha_0=active_alpha_0, active_alpha_0_fitting_penalty=active_alpha_0_fitting_penalty, active_ols=active_ols)
@@ -2208,26 +2224,26 @@ def logpdf_D_thisz(X, y, alpha, ynorm=None, tol=1e-3, max_steps=200):
 
 
 @jit(nopython=True, fastmath=True)
-def fit_models_ols(D_thisz, spec_data, err_data):
-    X = (D_thisz/err_data).T
+def fit_models_ols(D_thisz, spec_obs, err_obs):
+    X = (D_thisz/err_obs).T
     X = np.ascontiguousarray(X)
-    y = spec_data/err_data
+    y = spec_obs/err_obs
     coef = func.ols(X, y)
-    model = (D_thisz*err_data).T @ coef
+    model = (D_thisz*err_obs).T @ coef
     cov = np.linalg.inv(X.T @ X)
     return coef, model, cov
 
 
 # model fitting function wrapping larslasso
 @jit(nopython=True, fastmath=True)
-def fit_model_larslasso(D_thisz, spec_data, err_data, alpha=0.0, alpha_sig=0.0, positive=False,  
+def fit_model_larslasso(D_thisz, spec_obs, err_obs, alpha=0.0, alpha_sig=0.0, positive=False,  
                         center_Xy=False, unit_X=True, unit_y=True, path=True, best_estimator=None,
                         max_iter=200, decimals=10, max_feature=None, alpha_ns_scaling=False, 
                         active_alpha_0=False, active_alpha_0_fitting_penalty=False, active_ols=False):
-# def fit_model_larslasso(D_thisz, spec_data, err_data, *args, **kwargs):
-    X = (D_thisz/err_data).T    # currently D_thisz is X.T in usual LARSlasso convention
+# def fit_model_larslasso(D_thisz, spec_obs, err_obs, *args, **kwargs):
+    X = (D_thisz/err_obs).T    # currently D_thisz is X.T in usual LARSlasso convention
     X = np.ascontiguousarray(X)
-    y = spec_data/err_data
+    y = spec_obs/err_obs
     # y = np.ascontiguousarray(y)
 
     if center_Xy:    # calculate ynorm with centered y even if y is not centered because this determines alpha value during larslasso
@@ -2269,7 +2285,7 @@ def fit_model_larslasso(D_thisz, spec_data, err_data, alpha=0.0, alpha_sig=0.0, 
             last_alpha = 0.0
 
     ymodel = X @ coef + b
-    model = ymodel * err_data
+    model = ymodel * err_obs
 
     if best_estimator is not None:
         alpha_out = np.full_like(alpha_in, alpha_path[np.argmin(est_path)])

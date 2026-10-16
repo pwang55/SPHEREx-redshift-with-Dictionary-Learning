@@ -24,7 +24,7 @@ import multiprocessing as mp
 import argparse
 import pandas as pd
 
-# TEMP
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -138,7 +138,6 @@ def main():
     # config_file = sys.argv[1]
     config = libs.Configs(config=config_file)
 
-    # TEMP still name variables from config for now
     # Catalog configurations
     training_catalog = config.training_catalog
     validation_catalog = config.validation_catalog
@@ -174,7 +173,7 @@ def main():
     scale_past_data = config.scale_past_data
     correct_nodata_offset = config.correct_nodata_offset
     separate_training_weights = config.separate_training_weights
-    lamb_obs_sep = 3.79 # TEMP
+    lamb_obs_sep = 3.79
     weights1 = config.weights1
     weights2 = config.weights2
     learning_rate0 = config.learning_rate0
@@ -236,7 +235,6 @@ def main():
     fit_zgrid_validation_kws = config.fit_zgrid_validation_kws
     marginalize_zgrid_validation_kws = config.marginalize_zgrid_validation_kws
 
-    # TEMP modify settings if input from argparse is not None
     if args.alpha_train is not None:
         larslasso_alpha_train = args.alpha_train
         fit_zgrid_training_kws['alpha'] = larslasso_alpha_train
@@ -409,7 +407,7 @@ def main():
     print(f"Ndict = {Ndict}")
     # print(f"Add constant: {add_constant}")
     if training and (fix_dicts > 0):
-        print(f"Fixed dictionaries: {fix_dicts} (from the start of list)")  # TEMP
+        print(f"Fixed dictionaries: {fix_dicts} (from the start of list)")
     if training and (Ndict_sys>0):
         print(f"Rest frame systematic dictionaries: {Ndict_sys} (from the start of list)")
     print(f"Centering: {centering}")    
@@ -565,7 +563,7 @@ def main():
                 # fit this spectrum and obtain the redshift
                 spec_obs_i = np.ascontiguousarray(spec_obs[i_gal])
                 err_obs_i = np.ascontiguousarray(err_obs[i_gal])
-                fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, D_rest=D_rest, D_sys=D_sys, zinput=zinput, 
+                fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest=lamb_rest, D_rest=D_rest, D_sys=D_sys, zinput=zinput, 
                                                                         zgrid=zgrid, filters=filters, **fit_zgrid_training_kws)
                 # z, _, zlow, zhigh, coefs, b, model, _, _, _ = fit_out
                 z = fit_out['zpeak']
@@ -795,7 +793,6 @@ def main():
         # D_allz = dicts.make_D_allz(lamb_obs=lamb_obs, zgrid=zgrid, filters=filters, conv=fitting_convolve_filter)
         # D_zgrid = dicts.make_D_zgrid(zgrid=zgrid, filters=filters, conv=fitting_convolve_filter)
 
-        # TEMP convergence plot
         fig_converge, ax_converge = plt.subplots(figsize=(10, 6))
         ax_converge.plot(np.arange(Nepoch), 100*D_rest_change_rates.T, '-', linewidth=1, alpha=0.5)
         ax_converge.grid(alpha=0.4)
@@ -882,7 +879,6 @@ def main():
         # aic2_tot = np.sum(aic2)
         # bic2_tot = np.sum(bic2)
 
-        # TEMP template redshift distribution
         bins = 100
         nrows_dict_z = int(np.ceil(np.sqrt(Ndict)))
         ncols_dict_z = int(np.ceil(Ndict / nrows_dict_z))
@@ -1170,7 +1166,7 @@ def main():
                         lamb_obs, 
                         spec_obs_i, 
                         err_obs_i, 
-                        lamb_D=lamb_rest, 
+                        lamb_rest=lamb_rest, 
                         D_rest=D_rest_initial, 
                         D_sys=D_sys_initial, 
                         D_allz=D_allz_initial, 
@@ -1188,7 +1184,7 @@ def main():
                         lamb_obs, 
                         spec_obs_i, 
                         err_obs_i, 
-                        lamb_D=lamb_rest, 
+                        lamb_rest=lamb_rest, 
                         D_rest=D_rest_initial, 
                         D_sys=D_sys_initial, 
                         D_allz=D_allz_initial, 

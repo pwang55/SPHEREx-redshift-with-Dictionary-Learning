@@ -348,7 +348,7 @@ def example_seds(cat,
         # refit with the initial dictionary
         spec_obs_i = np.ascontiguousarray(spec_obs[idx_i])
         err_obs_i = np.ascontiguousarray(err_obs[idx_i])
-        fit_initial = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, 
+        fit_initial = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest=lamb_rest, 
                                      D_rest=D_rest_initial, D_sys=D_sys_initial, zinput=False, zgrid=zgrid, 
                                      D_rest_alphas=D_rest_alphas, D_rest_alphas_ndict=D_rest_alphas_ndict,
                                      filters=filters, **validation_fit_kws)
@@ -359,7 +359,7 @@ def example_seds(cat,
         coefs_initial = fit_initial['coef']
         best_model_initial = fit_initial['model']
         # refit with the trained dictionary
-        fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, 
+        fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest=lamb_rest, 
                                  D_rest=D_rest, D_sys=D_sys, zinput=False, zgrid=zgrid, 
                                  D_rest_alphas=D_rest_alphas, D_rest_alphas_ndict=D_rest_alphas_ndict,
                                  filters=filters, **validation_fit_kws)
@@ -1300,10 +1300,10 @@ def plot_bestfit_zgrid(idx=None,
         D_rest_alphas = dictionary.D_rest_alphas
         D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
 
-    fit_out = libs.fit_zgrid(lamb_data=lamb_obs,
-                             spec_data=spec_obs,
-                             err_data=err_obs,
-                             lamb_D=lamb_rest,
+    fit_out = libs.fit_zgrid(lamb_obs=lamb_obs,
+                             spec_obs=spec_obs,
+                             err_obs=err_obs,
+                             lamb_rest=lamb_rest,
                              D_rest=D_rest,
                              D_rest_alphas=D_rest_alphas,
                              D_rest_alphas_ndict=D_rest_alphas_ndict,
