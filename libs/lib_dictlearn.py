@@ -1648,11 +1648,11 @@ def fit_zgrid_multiprocessing(child,
                               marginalize_active_only=True,
                               marginalization_min_alpha=0.0,
                               marginalization_max_alpha=np.inf,
-                              return_zpdf=False,
+                              return_logpdf=False,
                               pz=None,
                               verbose=False):
 
-    if zgrid is None and return_zpdf:
+    if zgrid is None and return_logpdf:
         zgrid = generate_zgrid()
 
     conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
@@ -1712,10 +1712,10 @@ def fit_zgrid_multiprocessing(child,
     # cost_zgrid = np.zeros(Ngal) + np.inf
     # last_alpha = np.zeros(Ngal)
     ztrue_pit_fitted = np.zeros(Ngal)
-    if return_zpdf:
-        zpdf_fitted = np.zeros((Ngal, len(zgrid)))
+    if return_logpdf:
+        logpdf_fitted = np.zeros((Ngal, len(zgrid)))
     else:
-        zpdf_fitted = None
+        logpdf_fitted = None
 
     for i in range(Ngal):
         if verbose:
@@ -1791,15 +1791,15 @@ def fit_zgrid_multiprocessing(child,
         # idx_minchi2 = np.argmin(cost_zgrid)
         # cost_zgrid[i] = np.sum(((spec_obs[i]-model)/err_obs[i])**2)
         ztrue_pit_fitted[i] = ztrue_pit
-        if return_zpdf:
-            zpdf_fitted[i] = fit_out['pdf']
+        if return_logpdf:
+            logpdf_fitted[i] = fit_out['logpdf']
         # if alpha_path.shape[0] == 1:
         #     last_alpha[i] = alpha_path[0]
         # else:
         #     last_alpha[i] = alpha_path[-2]
 
     # results = (zpeak_fitted, zbest_fitted, zlow_fitted, zhigh_fitted, zstd_fitted, coefs_fitted, cost_zgrid, last_alpha, ztrue_pit_fitted)
-    results = (zpeak_fitted, zbest_fitted, zmed_fitted, zlow_fitted, zhigh_fitted, zstd_fitted, coefs_fitted, bs_fitted, ztrue_pit_fitted, zpdf_fitted)
+    results = (zpeak_fitted, zbest_fitted, zmed_fitted, zlow_fitted, zhigh_fitted, zstd_fitted, coefs_fitted, bs_fitted, ztrue_pit_fitted, logpdf_fitted)
     child.send(results)
     child.close()
 
@@ -1829,9 +1829,9 @@ def fit_cat_mp(cat,
                marginalization_min_alpha=0.0,
                marginalization_max_alpha=np.inf,
                pz=None, 
-               return_zpdf=False,
+               return_logpdf=False,
                ):
-    if zgrid is None and return_zpdf:
+    if zgrid is None and return_logpdf:
         zgrid = generate_zgrid()
 
     if lamb_obs is None:
@@ -1944,7 +1944,7 @@ def fit_cat_mp(cat,
                                   'marginalization_min_alpha': marginalization_min_alpha,
                                   'marginalization_max_alpha': marginalization_max_alpha,
                                   'pz': pz, 
-                                  'return_zpdf': return_zpdf,
+                                  'return_logpdf': return_logpdf,
                                   'verbose': group_verbose[mi]})
         process_mplist.append(p_mi)
         p_mi.start()
@@ -1958,12 +1958,12 @@ def fit_cat_mp(cat,
     coefs_final = np.zeros((Ndat, Ndict_total))
     bs_final = np.zeros_like(zpeak_final)
     ztrue_pit_final = np.zeros_like(zpeak_final)
-    if return_zpdf:
-        zpdf_final = np.zeros((Ndat, len(zgrid)))
+    if return_logpdf:
+        logpdf_final = np.zeros((Ndat, len(zgrid)))
     else:
-        zpdf_final = None
+        logpdf_final = None
     for mi in range(nthread):
-        zpeak_mi, zbest_mi, zmed_mi, zlow_mi, zhigh_mi, zstd_mi, coefs_mi, bs_mi, ztrue_pit_mi, zpdf_mi = parents_mplist[mi].recv()
+        zpeak_mi, zbest_mi, zmed_mi, zlow_mi, zhigh_mi, zstd_mi, coefs_mi, bs_mi, ztrue_pit_mi, logpdf_mi = parents_mplist[mi].recv()
         zpeak_final[group_idx[mi]] = zpeak_mi
         zbest_final[group_idx[mi]] = zbest_mi
         zmed_final[group_idx[mi]] = zmed_mi
@@ -1973,8 +1973,8 @@ def fit_cat_mp(cat,
         coefs_final[group_idx[mi]] = coefs_mi
         bs_final[group_idx[mi]] = bs_mi
         ztrue_pit_final[group_idx[mi]] = ztrue_pit_mi
-        if return_zpdf:
-            zpdf_final[group_idx[mi]] = zpdf_mi
+        if return_logpdf:
+            logpdf_final[group_idx[mi]] = logpdf_mi
     try:
         for mi in range(nthread):
             process_mplist[mi].join()
@@ -1993,7 +1993,7 @@ def fit_cat_mp(cat,
                     'coefs': coefs_final,
                     'bs': bs_final,
                     'ztrue_pit': ztrue_pit_final,
-                    'zpdf': zpdf_final,
+                    'logpdf': logpdf_final,
                     }
     return outputs_dict
 
