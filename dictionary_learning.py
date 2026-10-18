@@ -199,6 +199,7 @@ def main():
     larslasso_alpha_scaling = config.larslasso_alpha_scaling
     # Fitting configurations
     fitting = config.fitting
+
     marginalization = config.marginalization
     marginalization_min_alpha = config.marginalization_min_alpha
     marginalization_max_alpha = config.marginalization_max_alpha
@@ -206,6 +207,15 @@ def main():
         marginalization_min_alpha = 0.0
     if marginalization_max_alpha is None:
         marginalization_max_alpha = np.inf
+    
+    marginalize_active_only = config.marginalize_active_only
+    partial_marginalization_min_alpha = config.partial_marginalization_min_alpha
+    partial_marginalization_max_alpha = config.partial_marginalization_max_alpha
+    if partial_marginalization_min_alpha is None:
+        partial_marginalization_min_alpha = 0.0
+    if partial_marginalization_max_alpha is None:
+        partial_marginalization_max_alpha = np.inf
+
     probline = config.probline
     fit_training_catalog = config.fit_training_catalog
     fit_initial_dicts = config.fit_initial_dicts
@@ -1035,6 +1045,10 @@ def main():
             zinput = ztrue[i]
             alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
             if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                    marginalize_active_only_i = True
+                else:
+                    marginalize_active_only_i = False
                 fit_out = libs.marginalize_zgrid(
                     lamb_obs,
                     spec_obs[i],
@@ -1043,6 +1057,7 @@ def main():
                     zinput=zinput, 
                     zgrid=zgrid,
                     filters=filters,
+                    marginalize_active_only=marginalize_active_only_i,
                     **marginalize_zgrid_validation_kws
                 )
             else:
@@ -1162,6 +1177,10 @@ def main():
                 err_obs_i = np.ascontiguousarray(err_obs[i])
                 alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
                 if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                    if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                        marginalize_active_only_i = True
+                    else:
+                        marginalize_active_only_i = False
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs_i, 
@@ -1177,6 +1196,7 @@ def main():
                         zinput=zinput, 
                         zgrid=zgrid, 
                         filters=filters, 
+                        marginalize_active_only=marginalize_active_only_i,
                         **marginalize_zgrid_validation_kws
                     )
                 else:
@@ -1359,6 +1379,10 @@ def main():
                 zinput = ztrue[i]
                 alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
                 if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                    if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                        marginalize_active_only_i = True
+                    else:
+                        marginalize_active_only_i = False
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs[i], 
@@ -1367,6 +1391,7 @@ def main():
                         zinput=zinput, 
                         zgrid=zgrid, 
                         filters=filters, 
+                        marginalize_active_only=marginalize_active_only_i,
                         **marginalize_zgrid_validation_kws                        
                     )
                 else:
@@ -1422,6 +1447,10 @@ def main():
                     err_obs_i = np.ascontiguousarray(err_obs[i])
                     alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
                     if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                        if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                            marginalize_active_only_i = True
+                        else:
+                            marginalize_active_only_i = False
                         fit_out = libs.marginalize_zgrid(
                             lamb_obs, 
                             spec_obs_i, 
@@ -1430,6 +1459,7 @@ def main():
                             zinput=zinput, 
                             zgrid=zgrid, 
                             filters=filters, 
+                            marginalize_active_only=marginalize_active_only_i,
                             **marginalize_zgrid_validation_kws)
                     else:
                         fit_out = libs.fit_zgrid(
@@ -1477,8 +1507,11 @@ def main():
                 fit_zgrid_validation_kws=fit_zgrid_validation_kws,
                 marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                 marginalization=marginalization,
+                marginalize_active_only=marginalize_active_only,
                 marginalization_min_alpha=marginalization_min_alpha,
                 marginalization_max_alpha=marginalization_max_alpha,
+                partial_marginalization_min_alpha=partial_marginalization_min_alpha,
+                partial_marginalization_max_alpha=partial_marginalization_max_alpha,
                 filters=filters
             )
 
@@ -1514,8 +1547,11 @@ def main():
                     fit_zgrid_validation_kws=fit_zgrid_validation_kws,
                     marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                     marginalization=marginalization,
+                    marginalize_active_only=marginalize_active_only,
                     marginalization_min_alpha=marginalization_min_alpha,
                     marginalization_max_alpha=marginalization_max_alpha,
+                    partial_marginalization_min_alpha=partial_marginalization_min_alpha,
+                    partial_marginalization_max_alpha=partial_marginalization_max_alpha,
                     filters=filters
                 )
 

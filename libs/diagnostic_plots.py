@@ -411,17 +411,21 @@ def example_seds(cat,
         # plt.show()
     # self.fig_num += 1
 
-# Plot fractional uncertaintyt and z-score in 6 uncertainty bins
+# Plot fractional uncertainty and z-score in 6 uncertainty bins
 def uncertainty_binplots(zs=None, 
                          zp=None, 
                          zl=None, 
                          zh=None, 
+                         zstd=None,
                          zp0=None, 
                          zl0=None, 
                          zh0=None, 
+                         zstd0=None,
                          dat=None, 
+                         sigtype='std',
                          nbins=50, 
                          ztype='zbest', 
+                         figsize=(12, 12),
                          fit_initial=False,
                          savefig=False, 
                          output_dirname='', 
@@ -433,10 +437,12 @@ def uncertainty_binplots(zs=None,
         # zp = dat['zest']
         zl = dat['zlow']
         zh = dat['zhigh']
+        zstd = dat['zstd']
 
         # zp0 = dat['zest_initial']
         zl0 = dat['zlow_initial']
         zh0 = dat['zhigh_initial']
+        zstd0 = dat['zstd_initial']
         if ztype == 'zpeak':
             zp = dat['zpeak']
             zp0 = dat['zpeak_initial']
@@ -448,6 +454,7 @@ def uncertainty_binplots(zs=None,
         zp0 = zp
         zl0 = zl
         zh0 = zh
+        zstd0 = zstd
 
     color_args = {
         'hist1_color': 'salmon',
@@ -500,10 +507,16 @@ def uncertainty_binplots(zs=None,
         ]
     
     hist2_range = [-5, 5]
-    figsize = (12,12)
+    # figsize = (12,12)
 
-    sig = (zh-zl)/2
-    sig0 = (zh0-zl0)/2
+    if sigtype == 'std':
+        sig = zstd
+    else:
+        sig = (zh-zl)/2
+    if sigtype == 'std':
+        sig0 = zstd0
+    else:
+        sig0 = (zh0-zl0)/2
     frac_uncertainty = sig/(1+zp)
     frac_uncertainty0 = sig0/(1+zp0)
 

@@ -103,6 +103,9 @@ class Configs:
         self.marginalized_model = self.Fitting['marginalized_model']
         self.marginalization_min_alpha = self.Fitting['marginalization_min_alpha']
         self.marginalization_max_alpha = self.Fitting['marginalization_max_alpha']
+        self.marginalize_active_only = self.Fitting['marginalize_active_only']
+        self.partial_marginalization_min_alpha = self.Fitting['partial_marginalization_min_alpha']
+        self.partial_marginalization_max_alpha = self.Fitting['partial_marginalization_max_alpha']
         self.cdf_tol = self.Fitting['cdf_tol']
         self.cdf_max_steps = self.Fitting['cdf_max_steps']
         self.probline = self.Fitting['probline']
@@ -710,10 +713,15 @@ class Dictionary:
         return D_zgrid
     
 
-def get_D_rest_list_idx(alpha, D_rest_list_alphas):
-    idx = np.searchsorted(-D_rest_list_alphas, -alpha, side="left") - 1
-    idx = np.clip(idx, 0, len(D_rest_list_alphas) - 2)
-    return int(idx)
+# def get_D_rest_list_idx(alpha, D_rest_list_alphas):
+#     idx = np.searchsorted(-D_rest_list_alphas, -alpha, side="left") - 1
+#     idx = np.clip(idx, 0, len(D_rest_list_alphas) - 2)
+#     return int(idx)
+
+def get_D_rest_list_idx(alpha, D_rest_list_tab):
+    edges = np.array([row[0] for row in D_rest_list_tab] + [D_rest_list_tab[-1][1]])
+    idx = np.searchsorted(-edges, -alpha, side="left") - 1
+    return np.clip(idx, 0, len(D_rest_list_tab) - 1)
 
 # generate zgrid with (1+z) scaling
 def generate_zgrid(zmin=0.0, zmax=3.0, dz=0.002, scale_1plusz=True, testing_zgrid=False):
@@ -1025,7 +1033,7 @@ def apply_redshift_all(D, zgrid, lamb_in, lamb_out, Ndict_noshift=0, filters=Non
 def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
               lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
               D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
-              D_rest_list=None, D_allz_list=None, D_rest_list_alphas=None,
+              D_rest_list=None, D_allz_list=None, D_rest_list_tab=None,
               zgrid=None, zinput=None, filters=None, median_ynorm=None, median_spectra=None,
               larslasso=True, alpha=0, alpha_sig=0.0, positive=True, center_Xy=False, unit_X=True, unit_y=True, 
               path=True, best_estimator=None, max_feature=None, alpha_ns_scaling=False, 
@@ -1042,7 +1050,7 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         raise ValueError("D_rest, D_allz, D_sys, D_rest_list, D_allz_list are all not given")
 
     use_D_allz_list = False
-    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
+    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_tab is not None:
         use_D_allz_list = True
         if lamb_rest is None:
             raise ValueError("lamb_rest should be provided when using D_rest_list!")
@@ -1114,7 +1122,7 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         if D_allz is not None:
             D_allz = D_allz[:, :Ndicts_now]
     elif use_D_allz_list:
-        idx_D_list = get_D_rest_list_idx(alpha=alpha_now, D_rest_list_alphas=D_rest_list_alphas)
+        idx_D_list = get_D_rest_list_idx(alpha=alpha_now, D_rest_list_tab=D_rest_list_tab)
         if D_rest_list is not None:
             D_rest = D_rest_list[idx_D_list]
             Ndicts_now = D_rest.shape[0]
@@ -1392,14 +1400,14 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
 def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
                       lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
                       D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
-                      D_rest_list=None, D_allz_list=None, D_rest_list_alphas=None,
+                      D_rest_list=None, D_allz_list=None, D_rest_list_tab=None,
                       zgrid=None, zinput=None, filters=None, median_ynorm=None, median_spectra=None,
                       alpha=0, alpha_sig=0.0, cdf_tol=1e-3, cdf_max_steps=200,
                       dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, probline=0.317/2, conv=False,
                       zoutput=None, pz=None, marginalize_active_only=True):
 
     use_D_allz_list = False
-    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
+    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_tab is not None:
         use_D_allz_list = True
         if lamb_rest is None:
             raise ValueError("lamb_rest should be provided when using D_rest_list!")
@@ -1475,7 +1483,7 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         if D_allz is not None:
             D_allz = D_allz[:, :Ndicts_now]
     elif use_D_allz_list:
-        idx_D_list = get_D_rest_list_idx(alpha=alpha_now, D_rest_list_alphas=D_rest_list_alphas)
+        idx_D_list = get_D_rest_list_idx(alpha=alpha_now, D_rest_list_tab=D_rest_list_tab)
         if D_rest_list is not None:
             D_rest = D_rest_list[idx_D_list]
             Ndicts_now = D_rest.shape[0]
@@ -1639,7 +1647,7 @@ def fit_zgrid_multiprocessing(child,
                               D_sys_alphas_ndict=None,
                               D_rest_list=None,
                               D_allz_list=None,
-                              D_rest_list_alphas=None,
+                              D_rest_list_tab=None,
                               fit_zgrid_validation_kws=None, 
                               marginalize_zgrid_validation_kws=None,
                               zgrid=None, 
@@ -1648,6 +1656,8 @@ def fit_zgrid_multiprocessing(child,
                               marginalize_active_only=True,
                               marginalization_min_alpha=0.0,
                               marginalization_max_alpha=np.inf,
+                              partial_marginalization_min_alpha=0.0,
+                              partial_marginalization_max_alpha=np.inf,
                               return_logpdf=False,
                               pz=None,
                               verbose=False):
@@ -1663,7 +1673,7 @@ def fit_zgrid_multiprocessing(child,
         err_obs = cat.err_obs
 
     use_D_allz_list = False
-    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
+    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_tab is not None:
         use_D_allz_list = True
         D_rest = None
         D_rest_alphas = None
@@ -1725,48 +1735,54 @@ def fit_zgrid_multiprocessing(child,
         alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
 
         if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
-            fit_out = marginalize_zgrid(lamb_obs, 
-                                        spec_obs_i,
-                                        err_obs_i,
-                                        lamb_rest=lamb_rest,
-                                        D_rest=D_rest, 
-                                        D_sys=D_sys, 
-                                        D_allz=D_allz, 
-                                        D_rest_alphas=D_rest_alphas, 
-                                        D_rest_alphas_ndict=D_rest_alphas_ndict,
-                                        D_sys_alphas=D_sys_alphas,
-                                        D_sys_alphas_ndict=D_sys_alphas_ndict,
-                                        D_rest_list=D_rest_list,
-                                        D_allz_list=D_allz_list,
-                                        D_rest_list_alphas=D_rest_list_alphas,
-                                        zinput=ztrue[i], 
-                                        zgrid=zgrid, 
-                                        filters=filters, 
-                                        pz=pz, 
-                                        marginalize_active_only=marginalize_active_only,
-                                        **marginalize_zgrid_validation_kws
-                                        )
+            if marginalize_active_only and ((alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha)):
+                marginalize_active_only_i = True
+            else:
+                marginalize_active_only_i = False
+            fit_out = marginalize_zgrid(
+                lamb_obs, 
+                spec_obs_i,
+                err_obs_i,
+                lamb_rest=lamb_rest,
+                D_rest=D_rest, 
+                D_sys=D_sys, 
+                D_allz=D_allz, 
+                D_rest_alphas=D_rest_alphas, 
+                D_rest_alphas_ndict=D_rest_alphas_ndict,
+                D_sys_alphas=D_sys_alphas,
+                D_sys_alphas_ndict=D_sys_alphas_ndict,
+                D_rest_list=D_rest_list,
+                D_allz_list=D_allz_list,
+                D_rest_list_tab=D_rest_list_tab,
+                zinput=ztrue[i], 
+                zgrid=zgrid, 
+                filters=filters, 
+                pz=pz, 
+                marginalize_active_only=marginalize_active_only_i,
+                **marginalize_zgrid_validation_kws
+                )
 
         else:
-            fit_out = fit_zgrid(lamb_obs, 
-                                spec_obs_i, 
-                                err_obs_i, 
-                                lamb_rest=lamb_rest, 
-                                D_rest=D_rest, 
-                                D_sys=D_sys, 
-                                D_allz=D_allz, 
-                                D_rest_alphas=D_rest_alphas, 
-                                D_rest_alphas_ndict=D_rest_alphas_ndict,
-                                D_sys_alphas=D_sys_alphas,
-                                D_sys_alphas_ndict=D_sys_alphas_ndict,
-                                D_rest_list=D_rest_list,
-                                D_allz_list=D_allz_list,
-                                D_rest_list_alphas=D_rest_list_alphas,
-                                zinput=ztrue[i], 
-                                zgrid=zgrid, 
-                                filters=filters, 
-                                pz=pz, 
-                                **fit_zgrid_validation_kws)
+            fit_out = fit_zgrid(
+                lamb_obs, 
+                spec_obs_i, 
+                err_obs_i, 
+                lamb_rest=lamb_rest, 
+                D_rest=D_rest, 
+                D_sys=D_sys, 
+                D_allz=D_allz, 
+                D_rest_alphas=D_rest_alphas, 
+                D_rest_alphas_ndict=D_rest_alphas_ndict,
+                D_sys_alphas=D_sys_alphas,
+                D_sys_alphas_ndict=D_sys_alphas_ndict,
+                D_rest_list=D_rest_list,
+                D_allz_list=D_allz_list,
+                D_rest_list_tab=D_rest_list_tab,
+                zinput=ztrue[i], 
+                zgrid=zgrid, 
+                filters=filters, 
+                pz=pz, 
+                **fit_zgrid_validation_kws)
             # zpeak, zbest, zlow, zhigh, coef, _, model, zgrid, _, alpha_path = fit_out
         zpeak = fit_out['zpeak']
         zbest = fit_out['zbest']
@@ -1820,7 +1836,7 @@ def fit_cat_mp(cat,
                D_sys_alphas_ndict=None,
                D_rest_list=None,
                D_allz_list=None,
-               D_rest_list_alphas=None,
+               D_rest_list_tab=None,
                fit_zgrid_validation_kws=None, 
                marginalize_zgrid_validation_kws=None, 
                filters=None, 
@@ -1828,6 +1844,8 @@ def fit_cat_mp(cat,
                marginalize_active_only=True, 
                marginalization_min_alpha=0.0,
                marginalization_max_alpha=np.inf,
+               partial_marginalization_min_alpha=0.0,
+               partial_marginalization_max_alpha=np.inf,
                pz=None, 
                return_logpdf=False,
                ):
@@ -1859,7 +1877,7 @@ def fit_cat_mp(cat,
     conv = fit_zgrid_validation_kws['conv'] # both kws have the same conv setting
 
     use_D_allz_list = False
-    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_alphas is not None:
+    if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_tab is not None:
         use_D_allz_list = True
         D_rest = None
         D_rest_alphas = None
@@ -1934,7 +1952,7 @@ def fit_cat_mp(cat,
                                   'D_sys_alphas_ndict': D_sys_alphas_ndict,
                                   'D_rest_list': D_rest_list,
                                   'D_allz_list': D_allz_list,
-                                  'D_rest_list_alphas': D_rest_list_alphas,
+                                  'D_rest_list_tab': D_rest_list_tab,
                                   'fit_zgrid_validation_kws': fit_zgrid_validation_kws,
                                   'marginalize_zgrid_validation_kws': marginalize_zgrid_validation_kws,
                                   'zgrid': zgrid,
@@ -1943,6 +1961,8 @@ def fit_cat_mp(cat,
                                   'marginalize_active_only': marginalize_active_only,
                                   'marginalization_min_alpha': marginalization_min_alpha,
                                   'marginalization_max_alpha': marginalization_max_alpha,
+                                  'partial_marginalization_min_alpha': partial_marginalization_min_alpha,
+                                  'partial_marginalization_max_alpha': partial_marginalization_max_alpha,
                                   'pz': pz, 
                                   'return_logpdf': return_logpdf,
                                   'verbose': group_verbose[mi]})
