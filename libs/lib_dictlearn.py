@@ -338,7 +338,7 @@ class Dictionary:
         self.lamb_rest_end = lamb_rest_end
         self.lamb_rest_step = lamb_rest_step
         self.D_allz = None
-        self.D_allz_filtered = False
+        self._D_allz_filtered = False
         # if dictfile is provided, read from file and set up variables
         if dictfile is not None:
             self.read_dict(dictfile)
@@ -688,9 +688,9 @@ class Dictionary:
         Ndicts_now, _ = self.ndict_from_alpha(alpha=alpha, alpha_sys=alpha_sys)
         D_allz = apply_redshift_all(self.D_rest[:Ndicts_now], zgrid, self.lamb_rest, lamb_obs, filters=filters, conv=conv)
         if conv:
-            self.D_allz_filtered = True
+            self._D_allz_filtered = True
         else:
-            self.D_allz_filtered = False
+            self._D_allz_filtered = False
         self.D_allz = D_allz
         return D_allz
 
@@ -706,7 +706,7 @@ class Dictionary:
         else:
             D_allz = self.D_allz
         if conv:
-            self.D_allz_filtered = True
+            self._D_allz_filtered = True
         if self.D_sys is not None:
             D_zgrid = np.concatenate((np.broadcast_to(self.D_sys[:Ndicts_sys_now], (D_allz.shape[0], *self.D_sys[:Ndicts_sys_now].shape)), D_allz), axis=1)
         self.D_zgrid =D_zgrid
@@ -1075,10 +1075,10 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
-            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
-            if (conv != dictionary.D_allz_filtered):
-                print(f'libs.fit_zgrid: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+        if (D_allz is None) or (conv != dictionary._D_allz_filtered):
+            # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
+            if (conv != dictionary._D_allz_filtered):
+                print(f'libs.fit_zgrid: conv={conv}, dictionary._D_allz_filtered={dictionary._D_allz_filtered}, rebuild D_allz')
             D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
     # determine original Ndict
     if use_D_allz_list:
@@ -1432,10 +1432,10 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
-            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
-            if (conv != dictionary.D_allz_filtered):
-                print(f'libs.marginalize_zgrid: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+        if (D_allz is None) or (conv != dictionary._D_allz_filtered):
+            # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
+            if (conv != dictionary._D_allz_filtered):
+                print(f'libs.marginalize_zgrid: conv={conv}, dictionary._D_allz_filtered={dictionary._D_allz_filtered}, rebuild D_allz')
             D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
     # determine original Ndict
     if use_D_allz_list:
@@ -1695,10 +1695,10 @@ def fit_zgrid_multiprocessing(child,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
-            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
-            if (conv != dictionary.D_allz_filtered):
-                print(f'libs.fit_zgrid_multiprocessing: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+        if (D_allz is None) or (conv != dictionary._D_allz_filtered):
+            # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
+            if (conv != dictionary._D_allz_filtered):
+                print(f'libs.fit_zgrid_multiprocessing: conv={conv}, dictionary._D_allz_filtered={dictionary._D_allz_filtered}, rebuild D_allz')
             D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
 
     if not use_D_allz_list:
@@ -1899,10 +1899,10 @@ def fit_cat_mp(cat,
         D_sys_alphas = dictionary.D_sys_alphas
         D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         D_allz = dictionary.D_allz
-        if (D_allz is None) or (conv != dictionary.D_allz_filtered):
-            # if conv and dictionary.D_allz_filtered do not match, rebuild D_allz
-            if (conv != dictionary.D_allz_filtered):
-                print(f'libs.fit_cat_mp: conv={conv}, dictionary.D_allz_filtered={dictionary.D_allz_filtered}, rebuild D_allz')
+        if (D_allz is None) or (conv != dictionary._D_allz_filtered):
+            # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
+            if (conv != dictionary._D_allz_filtered):
+                print(f'libs.fit_cat_mp: conv={conv}, dictionary._D_allz_filtered={dictionary._D_allz_filtered}, rebuild D_allz')
             D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
     Ndict_total = 0
     if D_rest is not None:
