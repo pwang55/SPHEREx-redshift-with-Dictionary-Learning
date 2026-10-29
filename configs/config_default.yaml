@@ -78,10 +78,13 @@ LARSlasso:
 
 Fitting:
     fitting: True                                   # If False, skip fitting validation catalog
-    marginalization: False                          # whether to marginalize the coefficients when constructing zpdf
+    marginalization: True                          # whether to marginalize the coefficients when constructing zpdf
     marginalized_model: zpeak                       # which redshift is used to output best-fit model
-    marginalization_min_alpha: 0.01                 # zpdf of objects with alpha smaller than this will not be marginalized
-    marginalization_max_alpha: 0.05                 # zpdf of objects with alpha larger than this will not be marginalized
+    marginalization_min_alpha: 0.00                 # zpdf of objects with alpha smaller than this will not be marginalized
+    marginalization_max_alpha: 0.06                 # zpdf of objects with alpha larger than this will not be marginalized
+    marginalize_active_only: True                   # If True, ranges listed below will only use partial marginalization w.r.t. active templates
+    partial_marginalization_min_alpha: 0.02         # zpdf of objects with alpha larger than this will be marginalized only partially
+    partial_marginalization_max_alpha: 0.06         # zpdf of objects with alpha smaller than this will be marginalized only partially
     cdf_tol: 1.0E-3                                 # tolerance for calculating MVNCDF during each marginalization
     cdf_max_steps: 200                              # allowed max iteration steps for calculating MVNCDF during each marginalization
     probline: 0.1585                                # Cumulative probability from both end to evaluate 1-sigma, default 0.317/2

@@ -24,7 +24,7 @@ import multiprocessing as mp
 import argparse
 import pandas as pd
 
-# TEMP
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -112,6 +112,14 @@ def parse_args():
         help='dictionaries output filename',
     )
     parser.add_argument(
+        '-dso',
+        '--dicts_sys_out',
+        type=str,
+        default=None,
+        metavar='<str>',
+        help='obs-frame dictionaries output filename',
+    )
+    parser.add_argument(
         '-od',
         '--output_dir',
         type=str,
@@ -138,7 +146,6 @@ def main():
     # config_file = sys.argv[1]
     config = libs.Configs(config=config_file)
 
-    # TEMP still name variables from config for now
     # Catalog configurations
     training_catalog = config.training_catalog
     validation_catalog = config.validation_catalog
@@ -174,7 +181,7 @@ def main():
     scale_past_data = config.scale_past_data
     correct_nodata_offset = config.correct_nodata_offset
     separate_training_weights = config.separate_training_weights
-    lamb_obs_sep = 3.79 # TEMP
+    lamb_obs_sep = 3.79
     weights1 = config.weights1
     weights2 = config.weights2
     learning_rate0 = config.learning_rate0
@@ -200,6 +207,7 @@ def main():
     larslasso_alpha_scaling = config.larslasso_alpha_scaling
     # Fitting configurations
     fitting = config.fitting
+
     marginalization = config.marginalization
     marginalization_min_alpha = config.marginalization_min_alpha
     marginalization_max_alpha = config.marginalization_max_alpha
@@ -207,6 +215,15 @@ def main():
         marginalization_min_alpha = 0.0
     if marginalization_max_alpha is None:
         marginalization_max_alpha = np.inf
+    
+    marginalize_active_only = config.marginalize_active_only
+    partial_marginalization_min_alpha = config.partial_marginalization_min_alpha
+    partial_marginalization_max_alpha = config.partial_marginalization_max_alpha
+    if partial_marginalization_min_alpha is None:
+        partial_marginalization_min_alpha = 0.0
+    if partial_marginalization_max_alpha is None:
+        partial_marginalization_max_alpha = np.inf
+
     probline = config.probline
     fit_training_catalog = config.fit_training_catalog
     fit_initial_dicts = config.fit_initial_dicts
@@ -236,7 +253,6 @@ def main():
     fit_zgrid_validation_kws = config.fit_zgrid_validation_kws
     marginalize_zgrid_validation_kws = config.marginalize_zgrid_validation_kws
 
-    # TEMP modify settings if input from argparse is not None
     if args.alpha_train is not None:
         larslasso_alpha_train = args.alpha_train
         fit_zgrid_training_kws['alpha'] = larslasso_alpha_train
@@ -259,6 +275,10 @@ def main():
         dicts_out_filename = args.dicts_out
     else:
         dicts_out_filename = 'trained_templates.npz'
+    if args.dicts_sys_out is not None:
+        dicts_sys_out_filename = args.dicts_sys_out
+    else:
+        dicts_sys_out_filename = 'trained_templates_sys.npz'
     if args.output_dir is not None:
         output_dirname = args.output_dir
     if args.median_ynorm_train is not None:
@@ -338,18 +358,20 @@ def main():
     # if training is False, and if Ndict > total number of dictionaries in file, set input Ndict to None 
     # so that libs.Dictionary doesn't add noise templates
     if training:
-        dicts = libs.Dictionary(dictfile=dict_read_from_file,
-                            lamb_sys_size=len(lamb_obs),
-                            lamb_rest_step=lamb_rest_step,
-                            Ndict=Ndict,
-                            Ndict_sys=Ndict_sys,
-                            alpha_train=larslasso_alpha_train)
+        dicts = libs.Dictionary(
+            dictfile=dict_read_from_file,
+            lamb_sys_size=len(lamb_obs),
+            lamb_rest_step=lamb_rest_step,
+            Ndict=Ndict,
+            Ndict_sys=Ndict_sys,
+            alpha_train=larslasso_alpha_train)
     else:
-        dicts = libs.Dictionary(dictfile=dict_read_from_file,
-                            lamb_sys_size=len(lamb_obs),
-                            lamb_rest_step=lamb_rest_step,
-                            Ndict=None,
-                            Ndict_sys=None)
+        dicts = libs.Dictionary(
+            dictfile=dict_read_from_file,
+            lamb_sys_size=len(lamb_obs),
+            lamb_rest_step=lamb_rest_step,
+            Ndict=None,
+            Ndict_sys=None)
         
     lamb_rest = dicts.lamb_rest
     D_rest = dicts.D_rest
@@ -360,7 +382,7 @@ def main():
     D_rest_alphas_ndict = dicts.D_rest_alphas_ndict
     D_sys_alphas = dicts.D_sys_alphas
     D_sys_alphas_ndict = dicts.D_sys_alphas_ndict
-
+    # print('tttttt', Ndict_sys, dicts.D_rest_alphas_ndict, dicts.D_sys_alphas_ndict)
     # # lamb_rest_idx = np.arange(len(lamb_rest))
     # # Read EAZY templates for dictionary initialization and also evaluation test if they are given
     # if eazy_templates_location is not None and eazy_templates_dir.is_dir():
@@ -404,12 +426,14 @@ def main():
     if dict_read_from_file:
         print(f"Dictionaries:\t\t{dict_read_from_file}")
     else:
-        print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")    
+        print(f"{num_EAZY_as_dict} of 7 EAZY templates used as initialized dictionaries")
+    # if dict_sys_from_file:
+    #     print(f"obs-frame Dictionaries:\t\t{dict_sys_from_file}")
     print('')
     print(f"Ndict = {Ndict}")
     # print(f"Add constant: {add_constant}")
     if training and (fix_dicts > 0):
-        print(f"Fixed dictionaries: {fix_dicts} (from the start of list)")  # TEMP
+        print(f"Fixed dictionaries: {fix_dicts} (from the start of list)")
     if training and (Ndict_sys>0):
         print(f"Rest frame systematic dictionaries: {Ndict_sys} (from the start of list)")
     print(f"Centering: {centering}")    
@@ -485,7 +509,10 @@ def main():
     # TODO option to warm restart with A and B from dictionary file
     if training:
         print('')
-        D_rest_previous = D_rest.copy()
+        if Ndict > 0:
+            D_rest_previous = D_rest.copy()
+        elif Ndict == 0:
+            D_rest_previous = None
         if Ndict_sys is None:
             Ndict_sys = 0
         D_rest_change_rates = np.zeros((Ndict + Ndict_sys, Nepoch))
@@ -565,7 +592,7 @@ def main():
                 # fit this spectrum and obtain the redshift
                 spec_obs_i = np.ascontiguousarray(spec_obs[i_gal])
                 err_obs_i = np.ascontiguousarray(err_obs[i_gal])
-                fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, D_rest=D_rest, D_sys=D_sys, zinput=zinput, 
+                fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest=lamb_rest, D_rest=D_rest, D_sys=D_sys, zinput=zinput, 
                                                                         zgrid=zgrid, filters=filters, **fit_zgrid_training_kws)
                 # z, _, zlow, zhigh, coefs, b, model, _, _, _ = fit_out
                 z = fit_out['zpeak']
@@ -610,25 +637,26 @@ def main():
                     interpolated_spec_obs2 = np.interp(lamb_rest[j_update2], lamb_obs/(1+z), spec_obs_i_intrinsic)
 
                 # construct the model from best fit coefficients and dictionaries
-                error_rest = np.interp(lamb_rest, lamb_obs/(1+z), err_obs[i_gal])
-                model_rest = D_rest.T @ coefs[Ndict_sys:] + b * error_rest
-                if not separate_training_weights:
-                    spec_rest = model_rest.copy()
-                    spec_rest[j_update] = interpolated_spec_obs    # replace the overlapped part with interpolated observed spectra
-                    if correct_nodata_offset:
-                        spec_rest[j_longerside] += interpolated_residual[-1] # add the offset at the end of update region to longer wavelength side
-                        spec_rest[j_shorterside] += interpolated_residual[0]
-                else:
-                    spec_rest1 = model_rest.copy()
-                    spec_rest2 = model_rest.copy()
-                    spec_rest1[j_update1] = interpolated_spec_obs1    # replace the overlapped part with interpolated observed spectra
-                    spec_rest2[j_update2] = interpolated_spec_obs2    # replace the overlapped part with interpolated observed spectra
-                    if correct_nodata_offset:
-                        spec_rest1[j_longerside1] += interpolated_residual1[-1] # add the offset at the end of update region to longer wavelength side
-                        spec_rest1[j_shorterside1] += interpolated_residual1[0]
-                        spec_rest2[j_longerside2] += interpolated_residual2[-1] # add the offset at the end of update region to longer wavelength side
-                        spec_rest2[j_shorterside2] += interpolated_residual2[0]
-                # this will be considered the observed spectra for update purpose; outside overlap range just use model (no update)
+                if Ndict > 0:
+                    error_rest = np.interp(lamb_rest, lamb_obs/(1+z), err_obs[i_gal])
+                    model_rest = D_rest.T @ coefs[Ndict_sys:] + b * error_rest
+                    if not separate_training_weights:
+                        spec_rest = model_rest.copy()
+                        spec_rest[j_update] = interpolated_spec_obs    # replace the overlapped part with interpolated observed spectra
+                        if correct_nodata_offset:
+                            spec_rest[j_longerside] += interpolated_residual[-1] # add the offset at the end of update region to longer wavelength side
+                            spec_rest[j_shorterside] += interpolated_residual[0]
+                    else:
+                        spec_rest1 = model_rest.copy()
+                        spec_rest2 = model_rest.copy()
+                        spec_rest1[j_update1] = interpolated_spec_obs1    # replace the overlapped part with interpolated observed spectra
+                        spec_rest2[j_update2] = interpolated_spec_obs2    # replace the overlapped part with interpolated observed spectra
+                        if correct_nodata_offset:
+                            spec_rest1[j_longerside1] += interpolated_residual1[-1] # add the offset at the end of update region to longer wavelength side
+                            spec_rest1[j_shorterside1] += interpolated_residual1[0]
+                            spec_rest2[j_longerside2] += interpolated_residual2[-1] # add the offset at the end of update region to longer wavelength side
+                            spec_rest2[j_shorterside2] += interpolated_residual2[0]
+                    # this will be considered the observed spectra for update purpose; outside overlap range just use model (no update)
 
 
                 # # update each item in the dictionary (do not modify the DC offset term at the end)
@@ -646,92 +674,98 @@ def main():
                 # elif algorithm == 1:    # block-coordinate descent
 
                 # D_rest update block (updates A and B)
-                if remove_old_ab_info:
+                if (Ndict - fix_dicts) > 0:
+                    if remove_old_ab_info:
 
-                    # Use first coefficients to calculate A and B to remove
-                    coef_old = coefs_history[i_gal, 0].copy()
+                        # Use first coefficients to calculate A and B to remove
+                        coef_old = coefs_history[i_gal, 0].copy()
+                        if not separate_training_weights:
+                            spec_rest_old = spec_rest_history[i_gal, 0].copy()
+                            A_old = coef_old[Ndict_sys:,None] @ coef_old[Ndict_sys:,None].T
+                            B_old = spec_rest_old[:,None] @ coef_old[Ndict_sys:,None].T
+                            A -= A_old * old_AB_scale_factor
+                            B -= B_old * old_AB_scale_factor
+
+                        else:
+                            spec_rest1_old = spec_rest1_history[i_gal, 0].copy()
+                            spec_rest2_old = spec_rest2_history[i_gal, 0].copy()
+                            A1_old = coef_old[:,None] @ coef_old[:,None].T
+                            A2_old = coef_old[:,None] @ coef_old[:,None].T
+                            B1_old = spec_rest1_old[:,None] @ coef_old[:,None].T
+                            B2_old = spec_rest2_old[:,None] @ coef_old[:,None].T
+                            A1 -= A1_old * old_AB_scale_factor
+                            A2 -= A2_old * old_AB_scale_factor                        
+                            B1 -= B1_old * old_AB_scale_factor
+                            B2 -= B2_old * old_AB_scale_factor
+
+                        # move igal epochs ahead by 1
+                        if epochs_to_keep > 1:
+                            coefs_history[i_gal, 0:-1] = coefs_history[i_gal, 1:]
+                            coefs_history[i_gal, -1] = coefs
+                            if not separate_training_weights:
+                                spec_rest_history[i_gal, 0:-1] = spec_rest_history[i_gal, 1:]
+                                spec_rest_history[i_gal, -1] = spec_rest.copy()
+
+                            else:
+                                spec_rest1_history[i_gal, 0:-1] = spec_rest1_history[i_gal, 1:]
+                                spec_rest2_history[i_gal, 0:-1] = spec_rest2_history[i_gal, 1:]
+                                spec_rest1_history[i_gal, -1] = spec_rest1
+                                spec_rest2_history[i_gal, -1] = spec_rest2
+                            prev_igal0[i_gal, 0:-1] = prev_igal0[i_gal, 1:]
+                            prev_igal0[i_gal, -1] = i_gal0
+
+                        elif epochs_to_keep == 1:
+                            coefs_history[i_gal, 0] = coefs.copy()
+                            if not separate_training_weights:
+                                spec_rest_history[i_gal, 0] = spec_rest.copy()
+
+                            else:
+                                spec_rest1_history[i_gal, 0] = spec_rest1.copy()
+                                spec_rest2_history[i_gal, 0] = spec_rest2.copy()
+                            prev_igal0[i_gal, 0] = i_gal0
+
                     if not separate_training_weights:
-                        spec_rest_old = spec_rest_history[i_gal, 0].copy()
-                        A_old = coef_old[Ndict_sys:,None] @ coef_old[Ndict_sys:,None].T
-                        B_old = spec_rest_old[:,None] @ coef_old[Ndict_sys:,None].T
-                        A -= A_old * old_AB_scale_factor
-                        B -= B_old * old_AB_scale_factor
+                        A = A * AB_scale_factor + coefs[Ndict_sys:,None] @ coefs[Ndict_sys:,None].T
+                        B = B * AB_scale_factor + spec_rest[:,None] @ coefs[Ndict_sys:,None].T
 
                     else:
-                        spec_rest1_old = spec_rest1_history[i_gal, 0].copy()
-                        spec_rest2_old = spec_rest2_history[i_gal, 0].copy()
-                        A1_old = coef_old[:,None] @ coef_old[:,None].T
-                        A2_old = coef_old[:,None] @ coef_old[:,None].T
-                        B1_old = spec_rest1_old[:,None] @ coef_old[:,None].T
-                        B2_old = spec_rest2_old[:,None] @ coef_old[:,None].T
-                        A1 -= A1_old * old_AB_scale_factor
-                        A2 -= A2_old * old_AB_scale_factor                        
-                        B1 -= B1_old * old_AB_scale_factor
-                        B2 -= B2_old * old_AB_scale_factor
-
-                    # move igal epochs ahead by 1
-                    if epochs_to_keep > 1:
-                        coefs_history[i_gal, 0:-1] = coefs_history[i_gal, 1:]
-                        coefs_history[i_gal, -1] = coefs
-                        if not separate_training_weights:
-                            spec_rest_history[i_gal, 0:-1] = spec_rest_history[i_gal, 1:]
-                            spec_rest_history[i_gal, -1] = spec_rest.copy()
-
-                        else:
-                            spec_rest1_history[i_gal, 0:-1] = spec_rest1_history[i_gal, 1:]
-                            spec_rest2_history[i_gal, 0:-1] = spec_rest2_history[i_gal, 1:]
-                            spec_rest1_history[i_gal, -1] = spec_rest1
-                            spec_rest2_history[i_gal, -1] = spec_rest2
-                        prev_igal0[i_gal, 0:-1] = prev_igal0[i_gal, 1:]
-                        prev_igal0[i_gal, -1] = i_gal0
-
-                    elif epochs_to_keep == 1:
-                        coefs_history[i_gal, 0] = coefs.copy()
-                        if not separate_training_weights:
-                            spec_rest_history[i_gal, 0] = spec_rest.copy()
-
-                        else:
-                            spec_rest1_history[i_gal, 0] = spec_rest1.copy()
-                            spec_rest2_history[i_gal, 0] = spec_rest2.copy()
-                        prev_igal0[i_gal, 0] = i_gal0
-
-                if not separate_training_weights:
-                    A = A * AB_scale_factor + coefs[Ndict_sys:,None] @ coefs[Ndict_sys:,None].T
-                    B = B * AB_scale_factor + spec_rest[:,None] @ coefs[Ndict_sys:,None].T
-
-                else:
-                    A1 = A1 * AB_scale_factor + coefs[:,None] @ coefs[:,None].T
-                    A2 = A2 * AB_scale_factor + coefs[:,None] @ coefs[:,None].T
-                    A = A1 * weights1 + A2 * weights2
-                    B1 = B1 * AB_scale_factor + spec_rest1[:,None] @ coefs[:,None].T
-                    B2 = B2 * AB_scale_factor+ spec_rest2[:,None] @ coefs[:,None].T
-                    B = B1 * weights1 + B2 * weights2
+                        A1 = A1 * AB_scale_factor + coefs[:,None] @ coefs[:,None].T
+                        A2 = A2 * AB_scale_factor + coefs[:,None] @ coefs[:,None].T
+                        A = A1 * weights1 + A2 * weights2
+                        B1 = B1 * AB_scale_factor + spec_rest1[:,None] @ coefs[:,None].T
+                        B2 = B2 * AB_scale_factor+ spec_rest2[:,None] @ coefs[:,None].T
+                        B = B1 * weights1 + B2 * weights2
 
 
                 # iterative over A and B matrices until converge or max_AB_loop, only for Ndicts
                 # for j in range(Ndict-add_constant-fix_dicts):
                 # for j in range(Ndict-fix_dicts):
-                for j in range(fix_dicts, Ndict):
-                    score = 1.0
-                    # Dj_old = D_rest[j].copy()
-                    abi = 0
-                    while score >= AB_update_tolerance and abi < max_AB_loops:
-                        diag_Aj = np.diagonal(A)[j]
-                        if diag_Aj != 0:
-                            Dj_old = D_rest[j].copy()
-                            uj = 1/diag_Aj * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
-                            uj_norm = np.linalg.norm(uj)
-                            D_rest[j] = uj/max(1, uj_norm)
-                            score = np.linalg.norm(D_rest[j]-Dj_old)/np.linalg.norm(Dj_old)
-                            abi += 1
-                        else:
-                            break
+                if (Ndict - fix_dicts) > 0:
+                    for j in range(fix_dicts, Ndict):
+                        score = 1.0
+                        # Dj_old = D_rest[j].copy()
+                        abi = 0
+                        while score >= AB_update_tolerance and abi < max_AB_loops:
+                            diag_Aj = np.diagonal(A)[j]
+                            if diag_Aj != 0:
+                                Dj_old = D_rest[j].copy()
+                                uj = 1/diag_Aj * (B[:,j] - (D_rest.T @ A[j])) + D_rest[j]
+                                uj_norm = np.linalg.norm(uj)
+                                D_rest[j] = uj/max(1, uj_norm)
+                                score = np.linalg.norm(D_rest[j]-Dj_old)/np.linalg.norm(Dj_old)
+                                abi += 1
+                            else:
+                                break
 
                 # D_sys update block
                 if (Ndict_sys - fix_dicts_sys) > 0:
-                    D_thiszi = libs.apply_redshift(D_rest, z=z, lamb_in=lamb_rest, lamb_out=lamb_obs, filters=filters, conv=convolve_filter)
-                    model_intrinsic = D_thiszi.T @ coefs[Ndict_sys:]
-                    spec_obs_i_sys = spec_obs[i_gal] - model_intrinsic
+                    if Ndict > 0:
+                        D_thiszi = libs.apply_redshift(D_rest, z=z, lamb_in=lamb_rest, lamb_out=lamb_obs, filters=filters, conv=convolve_filter)
+                        model_intrinsic = D_thiszi.T @ coefs[Ndict_sys:]
+                        spec_obs_i_sys = spec_obs[i_gal] - model_intrinsic
+                    elif Ndict == 0:
+                        spec_obs_i_sys = spec_obs[i_gal]
+                        coef_old = coefs_history[i_gal, 0].copy()
 
                     if remove_old_ab_info:
                         if not separate_training_weights:
@@ -783,8 +817,9 @@ def main():
                                 break
 
             # record percentage change of all dictionaries
-            D_rest_change_rates[:Ndict, i_epoch] = np.linalg.norm(D_rest-D_rest_previous, axis=1)/np.linalg.norm(D_rest_previous, axis=1)
-            D_rest_previous = D_rest.copy()
+            if Ndict > 0:
+                D_rest_change_rates[:Ndict, i_epoch] = np.linalg.norm(D_rest-D_rest_previous, axis=1)/np.linalg.norm(D_rest_previous, axis=1)
+                D_rest_previous = D_rest.copy()
             if Ndict_sys > 0:
                 D_rest_change_rates[Ndict:Ndict+Ndict_sys, i_epoch] = np.linalg.norm(D_sys-D_sys_previous, axis=1)/np.linalg.norm(D_sys_previous, axis=1)
                 D_sys_previous = D_sys.copy()
@@ -795,7 +830,6 @@ def main():
         # D_allz = dicts.make_D_allz(lamb_obs=lamb_obs, zgrid=zgrid, filters=filters, conv=fitting_convolve_filter)
         # D_zgrid = dicts.make_D_zgrid(zgrid=zgrid, filters=filters, conv=fitting_convolve_filter)
 
-        # TEMP convergence plot
         fig_converge, ax_converge = plt.subplots(figsize=(10, 6))
         ax_converge.plot(np.arange(Nepoch), 100*D_rest_change_rates.T, '-', linewidth=1, alpha=0.5)
         ax_converge.grid(alpha=0.4)
@@ -882,62 +916,53 @@ def main():
         # aic2_tot = np.sum(aic2)
         # bic2_tot = np.sum(bic2)
 
-        # TEMP template redshift distribution
         bins = 100
-        nrows_dict_z = int(np.ceil(np.sqrt(Ndict)))
-        ncols_dict_z = int(np.ceil(Ndict / nrows_dict_z))
-        fig_dict_z, ax_dict_z = plt.subplots(nrows_dict_z, ncols_dict_z, figsize=(10, 8))
-        for i in range(nrows_dict_z*ncols_dict_z):
-            row = i % nrows_dict_z
-            col = i // nrows_dict_z
-            if Ndict == 1:
-                ax = ax_dict_z
-            elif Ndict == 2:
-                ax = ax_dict_z[i]
-            else:
-                ax = ax_dict_z[row, col]
-            if i < Ndict:
-                dicti_non_zeros_mask1 = coef_trained1[:, i] > 0
-                dicti_non_zeros_mask2 = coef_trained2[:, i] > 0
-                ztrue_i1 = ztrue[dicti_non_zeros_mask1]
-                ztrue_i2 = ztrue[dicti_non_zeros_mask2]
-                ax.hist(ztrue_i1, range=(zmin, zmax), bins=bins, alpha=0.6)
-                ax.hist(ztrue_i2, range=(zmin, zmax), bins=bins, alpha=0.6)
-                ax.grid(alpha=0.2)
-                ax.set_title(f"Dict {i}")
-            else:
-                ax.set_visible(False)
-        fig_dict_z.tight_layout()
-        plt.savefig(plots_dir / 'dicts_zdistribution_training.png', dpi=300)
+        if Ndict > 0:
+            nrows_dict_z = int(np.ceil(np.sqrt(Ndict)))
+            ncols_dict_z = int(np.ceil(Ndict / nrows_dict_z))
+            fig_dict_z, ax_dict_z = plt.subplots(nrows_dict_z, ncols_dict_z, figsize=(10, 8))
+            for i in range(nrows_dict_z*ncols_dict_z):
+                row = i % nrows_dict_z
+                col = i // nrows_dict_z
+                if Ndict == 1:
+                    ax = ax_dict_z
+                elif Ndict == 2:
+                    ax = ax_dict_z[i]
+                else:
+                    ax = ax_dict_z[row, col]
+                if i < Ndict:
+                    dicti_non_zeros_mask1 = coef_trained1[:, i] > 0
+                    dicti_non_zeros_mask2 = coef_trained2[:, i] > 0
+                    ztrue_i1 = ztrue[dicti_non_zeros_mask1]
+                    ztrue_i2 = ztrue[dicti_non_zeros_mask2]
+                    ax.hist(ztrue_i1, range=(zmin, zmax), bins=bins, alpha=0.6)
+                    ax.hist(ztrue_i2, range=(zmin, zmax), bins=bins, alpha=0.6)
+                    ax.grid(alpha=0.2)
+                    ax.set_title(f"Dict {i}")
+                else:
+                    ax.set_visible(False)
+            fig_dict_z.tight_layout()
+            plt.savefig(plots_dir / 'dicts_zdistribution_training.png', dpi=300)
 
         # TODO change to saving hdf5 file
-        np.savez_compressed(output_dir / dicts_out_filename,
-                            lamb_rest=lamb_rest, 
-                            D_rest=D_rest, 
-                            A=A, 
-                            B=B, 
-                            # mean_chi2_train_alpha=mean_chi21,
-                            # std_chi2_train_alpha=std_chi21,
-                            # percentile_chi2_train_alpha=percentile_chi21, 
-                            # mean_cost_train_alpha=mean_cost1,
-                            # std_cost_train_alpha=std_cost1,
-                            # percentile_cost_train_alpha=percentile_cost1,
-                            # aic_train_alpha=aic1_tot,
-                            # bic_train_alpha=bic1_tot,
-                            # TEMP
-                            # mean_chi2_fit_alpha=mean_chi22,
-                            # std_chi2_fit_alpha=std_chi22,
-                            # percentile_chi2_fit_alpha=percentile_chi22,
-                            # mean_cost_fit_alpha=mean_cost2,
-                            # std_cost_fit_alpha=std_cost2,
-                            # percentile_cost_fit_alpha=percentile_cost2,
-                            # aic_fit_alpha=aic2_tot,
-                            # bic_fit_alpha=bic2_tot,
-                            D_rest_change_rates=D_rest_change_rates
-                            )
+        if Ndict > 0:
+            np.savez_compressed(output_dir / dicts_out_filename,
+                                lamb_rest=lamb_rest, 
+                                D_rest=D_rest, 
+                                A=A, 
+                                B=B, 
+                                # D_sys=D_sys,
+                                # Asys=Asys,
+                                # Bsys=Bsys,
+                                D_rest_change_rates=D_rest_change_rates
+                                )
 
         if Ndict_sys > 0:
-            np.savez_compressed(output_dir / 'trained_templates_sys.npz',lamb_rest=lamb_obs, D_rest=D_sys, A=A, B=B)
+            np.savez_compressed(output_dir / dicts_sys_out_filename, 
+                                lamb_rest=lamb_obs, 
+                                D_sys=D_sys, 
+                                A_sys=Asys, 
+                                B_sys=Bsys)
     
         # fit training data with fix redshift and training setting to make sparsity plot and chi2 plot
         ynorms = np.linalg.norm(spec_obs/err_obs, axis=1)
@@ -991,8 +1016,8 @@ def main():
     # Make template plots and multiplots
     # makefigs = dplots.diagnostic_plots(output_dirname=plots_dir)
     dplots.template_plots(lamb_rest=lamb_rest, 
-                          D_rest=D_rest[:Ndict], 
-                          D_rest_initial=D_rest_initial[:Ndict],
+                          D_rest=D_rest, 
+                          D_rest_initial=D_rest_initial,
                           lamb_obs=lamb_obs,
                           D_sys=D_sys,
                           D_sys_initial=D_sys_initial,
@@ -1039,6 +1064,10 @@ def main():
             zinput = ztrue[i]
             alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
             if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                    marginalize_active_only_i = True
+                else:
+                    marginalize_active_only_i = False
                 fit_out = libs.marginalize_zgrid(
                     lamb_obs,
                     spec_obs[i],
@@ -1047,6 +1076,7 @@ def main():
                     zinput=zinput, 
                     zgrid=zgrid,
                     filters=filters,
+                    marginalize_active_only=marginalize_active_only_i,
                     **marginalize_zgrid_validation_kws
                 )
             else:
@@ -1166,11 +1196,15 @@ def main():
                 err_obs_i = np.ascontiguousarray(err_obs[i])
                 alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
                 if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                    if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                        marginalize_active_only_i = True
+                    else:
+                        marginalize_active_only_i = False
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs_i, 
                         err_obs_i, 
-                        lamb_D=lamb_rest, 
+                        lamb_rest=lamb_rest, 
                         D_rest=D_rest_initial, 
                         D_sys=D_sys_initial, 
                         D_allz=D_allz_initial, 
@@ -1181,6 +1215,7 @@ def main():
                         zinput=zinput, 
                         zgrid=zgrid, 
                         filters=filters, 
+                        marginalize_active_only=marginalize_active_only_i,
                         **marginalize_zgrid_validation_kws
                     )
                 else:
@@ -1188,7 +1223,7 @@ def main():
                         lamb_obs, 
                         spec_obs_i, 
                         err_obs_i, 
-                        lamb_D=lamb_rest, 
+                        lamb_rest=lamb_rest, 
                         D_rest=D_rest_initial, 
                         D_sys=D_sys_initial, 
                         D_allz=D_allz_initial, 
@@ -1363,6 +1398,10 @@ def main():
                 zinput = ztrue[i]
                 alpha_i = 1/np.linalg.norm(spec_obs[i]/err_obs[i])
                 if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                    if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                        marginalize_active_only_i = True
+                    else:
+                        marginalize_active_only_i = False
                     fit_out = libs.marginalize_zgrid(
                         lamb_obs, 
                         spec_obs[i], 
@@ -1371,6 +1410,7 @@ def main():
                         zinput=zinput, 
                         zgrid=zgrid, 
                         filters=filters, 
+                        marginalize_active_only=marginalize_active_only_i,
                         **marginalize_zgrid_validation_kws                        
                     )
                 else:
@@ -1426,6 +1466,10 @@ def main():
                     err_obs_i = np.ascontiguousarray(err_obs[i])
                     alpha_i = 1/np.linalg.norm(spec_obs_i/err_obs_i)
                     if marginalization and (alpha_i >= marginalization_min_alpha) and (alpha_i < marginalization_max_alpha):
+                        if marginalize_active_only and (alpha_i >= partial_marginalization_min_alpha) and (alpha_i < partial_marginalization_max_alpha):
+                            marginalize_active_only_i = True
+                        else:
+                            marginalize_active_only_i = False
                         fit_out = libs.marginalize_zgrid(
                             lamb_obs, 
                             spec_obs_i, 
@@ -1434,6 +1478,7 @@ def main():
                             zinput=zinput, 
                             zgrid=zgrid, 
                             filters=filters, 
+                            marginalize_active_only=marginalize_active_only_i,
                             **marginalize_zgrid_validation_kws)
                     else:
                         fit_out = libs.fit_zgrid(
@@ -1481,8 +1526,11 @@ def main():
                 fit_zgrid_validation_kws=fit_zgrid_validation_kws,
                 marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                 marginalization=marginalization,
+                marginalize_active_only=marginalize_active_only,
                 marginalization_min_alpha=marginalization_min_alpha,
                 marginalization_max_alpha=marginalization_max_alpha,
+                partial_marginalization_min_alpha=partial_marginalization_min_alpha,
+                partial_marginalization_max_alpha=partial_marginalization_max_alpha,
                 filters=filters
             )
 
@@ -1518,8 +1566,11 @@ def main():
                     fit_zgrid_validation_kws=fit_zgrid_validation_kws,
                     marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
                     marginalization=marginalization,
+                    marginalize_active_only=marginalize_active_only,
                     marginalization_min_alpha=marginalization_min_alpha,
                     marginalization_max_alpha=marginalization_max_alpha,
+                    partial_marginalization_min_alpha=partial_marginalization_min_alpha,
+                    partial_marginalization_max_alpha=partial_marginalization_max_alpha,
                     filters=filters
                 )
 

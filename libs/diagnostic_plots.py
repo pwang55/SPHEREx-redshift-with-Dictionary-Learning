@@ -24,7 +24,8 @@ def template_plots(lamb_rest,
     output_dir = Path(output_dirname)
 
     fig1, ax1 = plt.subplots(figsize=(8,4))
-    ax1.plot(lamb_rest, D_rest.T, '-', linewidth=1, alpha=0.8)
+    if D_rest is not None:
+        ax1.plot(lamb_rest, D_rest.T, '-', linewidth=1, alpha=0.8)
     if lamb_obs is not None and D_sys is not None:
         ax1.plot(lamb_obs, D_sys.T, '--', linewidth=1, alpha=0.8)
     ax1.set_xlabel(r"Wavelength [$\mu m$]")
@@ -40,13 +41,17 @@ def template_plots(lamb_rest,
     # self.fig_num += 1
     templates_figsize = (12, 10)
     tick_fontsize = 6
-    
-    Ndict = D_rest.shape[0]
+
+    if D_rest is not None:
+        Ndict = D_rest.shape[0]
+    else:
+        Ndict = 0
     if lamb_obs is not None and D_sys is not None:
         Ndict_sys = D_sys.shape[0]
     else:
         Ndict_sys = 0
-    D_diff = D_rest - D_rest_initial
+    if D_rest is not None:
+        D_diff = D_rest - D_rest_initial
     if (Ndict+Ndict_sys) == 1:
         Nrows = 2
     else:
@@ -348,7 +353,7 @@ def example_seds(cat,
         # refit with the initial dictionary
         spec_obs_i = np.ascontiguousarray(spec_obs[idx_i])
         err_obs_i = np.ascontiguousarray(err_obs[idx_i])
-        fit_initial = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, 
+        fit_initial = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest=lamb_rest, 
                                      D_rest=D_rest_initial, D_sys=D_sys_initial, zinput=False, zgrid=zgrid, 
                                      D_rest_alphas=D_rest_alphas, D_rest_alphas_ndict=D_rest_alphas_ndict,
                                      filters=filters, **validation_fit_kws)
@@ -359,7 +364,7 @@ def example_seds(cat,
         coefs_initial = fit_initial['coef']
         best_model_initial = fit_initial['model']
         # refit with the trained dictionary
-        fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_D=lamb_rest, 
+        fit_out = libs.fit_zgrid(lamb_obs, spec_obs_i, err_obs_i, lamb_rest=lamb_rest, 
                                  D_rest=D_rest, D_sys=D_sys, zinput=False, zgrid=zgrid, 
                                  D_rest_alphas=D_rest_alphas, D_rest_alphas_ndict=D_rest_alphas_ndict,
                                  filters=filters, **validation_fit_kws)
@@ -411,17 +416,21 @@ def example_seds(cat,
         # plt.show()
     # self.fig_num += 1
 
-# Plot fractional uncertaintyt and z-score in 6 uncertainty bins
+# Plot fractional uncertainty and z-score in 6 uncertainty bins
 def uncertainty_binplots(zs=None, 
                          zp=None, 
                          zl=None, 
                          zh=None, 
+                         zstd=None,
                          zp0=None, 
                          zl0=None, 
                          zh0=None, 
+                         zstd0=None,
                          dat=None, 
+                         sigtype='std',
                          nbins=50, 
                          ztype='zbest', 
+                         figsize=(12, 12),
                          fit_initial=False,
                          savefig=False, 
                          output_dirname='', 
@@ -433,10 +442,12 @@ def uncertainty_binplots(zs=None,
         # zp = dat['zest']
         zl = dat['zlow']
         zh = dat['zhigh']
+        zstd = dat['zstd']
 
         # zp0 = dat['zest_initial']
         zl0 = dat['zlow_initial']
         zh0 = dat['zhigh_initial']
+        zstd0 = dat['zstd_initial']
         if ztype == 'zpeak':
             zp = dat['zpeak']
             zp0 = dat['zpeak_initial']
@@ -448,6 +459,7 @@ def uncertainty_binplots(zs=None,
         zp0 = zp
         zl0 = zl
         zh0 = zh
+        zstd0 = zstd
 
     color_args = {
         'hist1_color': 'salmon',
@@ -500,10 +512,16 @@ def uncertainty_binplots(zs=None,
         ]
     
     hist2_range = [-5, 5]
-    figsize = (12,12)
+    # figsize = (12,12)
 
-    sig = (zh-zl)/2
-    sig0 = (zh0-zl0)/2
+    if sigtype == 'std':
+        sig = zstd
+    else:
+        sig = (zh-zl)/2
+    if sigtype == 'std':
+        sig0 = zstd0
+    else:
+        sig0 = (zh0-zl0)/2
     frac_uncertainty = sig/(1+zp)
     frac_uncertainty0 = sig0/(1+zp0)
 
@@ -1300,10 +1318,10 @@ def plot_bestfit_zgrid(idx=None,
         D_rest_alphas = dictionary.D_rest_alphas
         D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
 
-    fit_out = libs.fit_zgrid(lamb_data=lamb_obs,
-                             spec_data=spec_obs,
-                             err_data=err_obs,
-                             lamb_D=lamb_rest,
+    fit_out = libs.fit_zgrid(lamb_obs=lamb_obs,
+                             spec_obs=spec_obs,
+                             err_obs=err_obs,
+                             lamb_rest=lamb_rest,
                              D_rest=D_rest,
                              D_rest_alphas=D_rest_alphas,
                              D_rest_alphas_ndict=D_rest_alphas_ndict,
