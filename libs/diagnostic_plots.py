@@ -24,7 +24,8 @@ def template_plots(lamb_rest,
     output_dir = Path(output_dirname)
 
     fig1, ax1 = plt.subplots(figsize=(8,4))
-    ax1.plot(lamb_rest, D_rest.T, '-', linewidth=1, alpha=0.8)
+    if D_rest is not None:
+        ax1.plot(lamb_rest, D_rest.T, '-', linewidth=1, alpha=0.8)
     if lamb_obs is not None and D_sys is not None:
         ax1.plot(lamb_obs, D_sys.T, '--', linewidth=1, alpha=0.8)
     ax1.set_xlabel(r"Wavelength [$\mu m$]")
@@ -40,13 +41,17 @@ def template_plots(lamb_rest,
     # self.fig_num += 1
     templates_figsize = (12, 10)
     tick_fontsize = 6
-    
-    Ndict = D_rest.shape[0]
+
+    if D_rest is not None:
+        Ndict = D_rest.shape[0]
+    else:
+        Ndict = 0
     if lamb_obs is not None and D_sys is not None:
         Ndict_sys = D_sys.shape[0]
     else:
         Ndict_sys = 0
-    D_diff = D_rest - D_rest_initial
+    if D_rest is not None:
+        D_diff = D_rest - D_rest_initial
     if (Ndict+Ndict_sys) == 1:
         Nrows = 2
     else:
