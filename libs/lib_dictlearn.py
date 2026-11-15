@@ -1037,6 +1037,7 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
               lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
               D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
               D_rest_list=None, D_allz_list=None, D_rest_list_tab=None,
+              D_sys_list=None, D_sys_list_tab=None,
               zgrid=None, zinput=None, filters=None, median_ynorm=None, median_spectra=None,
               larslasso=True, alpha=0, alpha_sig=0.0, positive=True, center_Xy=False, unit_X=True, unit_y=True, 
               path=True, best_estimator=None, max_feature=None, alpha_ns_scaling=False, 
@@ -1046,11 +1047,42 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
               output_all_coefs=False, fix_at_zinput=False, pz=None):
     if (median_spectra is not None) and (median_spectra > 1):
         median_ynorm = None     # safeguard; if median_spectra, there is no reason to use median_ynorm
-    # Check if D_rest is necessary but not given
-    if ((zinput is not None) or local_finegrid) and D_rest is None and D_sys is None and dictionary is None and ((D_rest_list is None) or (D_allz_list is None)):
-        raise ValueError("D_rest is required but not given for zinput != None")
-    if D_rest is None and D_allz is None and D_sys is None and dictionary is None and D_rest_list is None and D_allz_list is None:
-        raise ValueError("D_rest, D_allz, D_sys, D_rest_list, D_allz_list are all not given")
+    # # Check if D_rest is necessary but not given
+    # if (
+    #     ((zinput is not None) or local_finegrid) 
+    #      and D_rest is None 
+    #      and D_sys is None 
+    #      and dictionary is None 
+    #      and ((D_rest_list is None) or (D_allz_list is None))
+    #     ):
+    #     raise ValueError("D_rest is required but not given for zinput != None")
+    if (
+        ((zinput > 0.0 and fix_at_zinput) or local_finegrid)
+        and D_rest is None 
+        and dictionary is None
+        and D_rest_list is None
+        ):
+        raise ValueError("D_rest is required for zinput>0 or local_finegrid but not provided")
+    elif (
+        zinput == 0.0
+        and fix_at_zinput
+        and D_rest is None 
+        and D_sys is None 
+        and dictionary is None
+        and D_rest_list is None
+        and D_sys_list is None
+    ):
+        raise ValueError("D_rest or D_sys is required for zinput=0 but none are provided")
+    if (
+        D_rest is None 
+        and D_allz is None 
+        and D_sys is None 
+        and dictionary is None 
+        and D_rest_list is None 
+        and D_allz_list is None
+        and D_sys_list is None
+        ):
+        raise ValueError("D_rest, D_allz, D_sys, D_rest_list, D_allz_list, D_sys_list are all not given")
 
     use_D_allz_list = False
     if (D_rest_list is not None or D_allz_list is not None) and D_rest_list_tab is not None:
@@ -1060,24 +1092,33 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         D_rest = None
         D_rest_alphas = None
         D_rest_alphas_ndict = None
-        D_sys = None
-        D_sys_alphas = None
-        D_sys_alphas_ndict = None
+        # D_sys = None
+        # D_sys_alphas = None
+        # D_sys_alphas_ndict = None
         if D_allz_list is None:
             D_allz_list = []
             for i in range(len(D_rest_list)):
                 D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv))
 
+    use_D_sys_list = False
+    if (D_sys_list is not None) and D_sys_list_tab is not None:
+        use_D_sys_list = True
+        D_sys = None
+        D_sys_alphas = None
+        D_sys_alphas_ndict = None
+
     # if dictionary object is provided, read info from it
-    elif dictionary is not None:
+    if dictionary is not None:
         lamb_rest = dictionary.lamb_rest
-        D_rest = dictionary.D_rest
-        D_rest_alphas = dictionary.D_rest_alphas
-        D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
-        D_sys = dictionary.D_sys
-        D_sys_alphas = dictionary.D_sys_alphas
-        D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
-        D_allz = dictionary.D_allz
+        if not use_D_allz_list:
+            D_rest = dictionary.D_rest
+            D_rest_alphas = dictionary.D_rest_alphas
+            D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
+            D_allz = dictionary.D_allz
+        if not use_D_sys_list:
+            D_sys = dictionary.D_sys
+            D_sys_alphas = dictionary.D_sys_alphas
+            D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         if (D_allz is None) or (conv != dictionary._D_allz_filtered):
             # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
             if (conv != dictionary._D_allz_filtered):
@@ -1094,8 +1135,9 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
     else:
         Ndicts_original = 0
 
-    # determine original Ndict_sys
-    if D_sys is not None:
+    if use_D_sys_list:
+        Ndicts_sys_original = D_sys_list[-1].shape[0]
+    elif D_sys is not None:
         Ndicts_sys_original = D_sys.shape[0]
     else:
         Ndicts_sys_original = 0
@@ -1105,7 +1147,7 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         spec_obs = median_filter(spec_obs, size=median_spectra)
 
     # calculate ynorm first and use D_rest_alphas to determine how many templates to use
-    if D_rest_alphas is not None or D_sys_alphas is not None or use_D_allz_list:
+    if D_rest_alphas is not None or D_sys_alphas is not None or use_D_allz_list or use_D_sys_list:
         if (median_ynorm is None) or (median_ynorm == 1):
             ynorm = np.linalg.norm(spec_obs/err_obs)
         else:
@@ -1143,6 +1185,11 @@ def fit_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         Ndicts_sys_now = D_sys_alphas_ndict[idx_Ndicts_sys_now]
         if D_sys is not None:
             D_sys = D_sys[:Ndicts_sys_now]
+    elif use_D_sys_list:
+        idx_D_sys_list = get_D_rest_list_idx(alpha=alpha_now, D_rest_list_tab=D_sys_list_tab)
+        # if D_sys_list is not None:
+        D_sys = D_sys_list[idx_D_sys_list]
+        Ndicts_sys_now = D_sys.shape[0]
     else:
         Ndicts_sys_now = Ndicts_sys_original
 
@@ -1404,6 +1451,7 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
                       lamb_rest=None, D_rest=None, D_sys=None, D_allz=None, 
                       D_rest_alphas=None, D_rest_alphas_ndict=None, D_sys_alphas=None, D_sys_alphas_ndict=None,
                       D_rest_list=None, D_allz_list=None, D_rest_list_tab=None,
+                      D_sys_list=None, D_sys_list_tab=None,
                       zgrid=None, zinput=None, filters=None, median_ynorm=None, median_spectra=None,
                       alpha=0, alpha_sig=0.0, cdf_tol=1e-3, cdf_max_steps=200,
                       dz=0.002, zmin=0.0, zmax=3.0, scale_1plusz=True, probline=0.317/2, conv=False,
@@ -1417,24 +1465,33 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         D_rest = None
         D_rest_alphas = None
         D_rest_alphas_ndict = None
-        D_sys = None
-        D_sys_alphas = None
-        D_sys_alphas_ndict = None
+        # D_sys = None
+        # D_sys_alphas = None
+        # D_sys_alphas_ndict = None
         if D_allz_list is None:
             D_allz_list = []
             for i in range(len(D_rest_list)):
                 D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv))
 
+    use_D_sys_list = False
+    if (D_sys_list is not None) and D_sys_list_tab is not None:
+        use_D_sys_list = True
+        D_sys = None
+        D_sys_alphas = None
+        D_sys_alphas_ndict = None
+
     # if dictionary object is provided, read info from it
-    elif dictionary is not None:
+    if dictionary is not None:
         lamb_rest = dictionary.lamb_rest
-        D_rest = dictionary.D_rest
-        D_rest_alphas = dictionary.D_rest_alphas
-        D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
-        D_sys = dictionary.D_sys
-        D_sys_alphas = dictionary.D_sys_alphas
-        D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
-        D_allz = dictionary.D_allz
+        if not use_D_allz_list:
+            D_rest = dictionary.D_rest
+            D_rest_alphas = dictionary.D_rest_alphas
+            D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
+            D_allz = dictionary.D_allz
+        if not use_D_sys_list:
+            D_sys = dictionary.D_sys
+            D_sys_alphas = dictionary.D_sys_alphas
+            D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         if (D_allz is None) or (conv != dictionary._D_allz_filtered):
             # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
             if (conv != dictionary._D_allz_filtered):
@@ -1452,7 +1509,9 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         Ndicts_original = 0
 
     # determine original Ndict_sys
-    if D_sys is not None:
+    if use_D_sys_list:
+        Ndicts_sys_original = D_sys_list[-1].shape[0]
+    elif D_sys is not None:
         Ndicts_sys_original = D_sys.shape[0]
     else:
         Ndicts_sys_original = 0
@@ -1462,7 +1521,7 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         spec_obs = median_filter(spec_obs, size=median_spectra)
 
     # calculate ynorm first and use D_rest_alphas to determine how many templates to use
-    if D_rest_alphas is not None or D_sys_alphas is not None or use_D_allz_list:
+    if D_rest_alphas is not None or D_sys_alphas is not None or use_D_allz_list or use_D_sys_list:
         if (median_ynorm is None) or (median_ynorm == 1):
             ynorm = np.linalg.norm(spec_obs/err_obs)
         else:
@@ -1506,6 +1565,11 @@ def marginalize_zgrid(lamb_obs, spec_obs, err_obs, dictionary=None,
         Ndicts_sys_now = D_sys_alphas_ndict[idx_Ndicts_sys_now]
         if D_sys is not None:
             D_sys = D_sys[:Ndicts_sys_now]
+    elif use_D_sys_list:
+        idx_D_sys_list = get_D_rest_list_idx(alpha=alpha_now, D_rest_list_tab=D_sys_list_tab)
+        # if D_sys_list is not None:
+        D_sys = D_sys_list[idx_D_sys_list]
+        Ndicts_sys_now = D_sys.shape[0]
     else:
         Ndicts_sys_now = Ndicts_sys_original
 
@@ -1656,6 +1720,8 @@ def fit_zgrid_multiprocessing(child,
                               D_rest_list=None,
                               D_allz_list=None,
                               D_rest_list_tab=None,
+                              D_sys_list=None,
+                              D_sys_list_tab=None,
                               fit_zgrid_validation_kws=None, 
                               marginalize_zgrid_validation_kws=None,
                               zgrid=None, 
@@ -1687,23 +1753,32 @@ def fit_zgrid_multiprocessing(child,
         D_rest = None
         D_rest_alphas = None
         D_rest_alphas_ndict = None
-        D_sys = None
-        D_sys_alphas = None
-        D_sys_alphas_ndict = None
+        # D_sys = None
+        # D_sys_alphas = None
+        # D_sys_alphas_ndict = None
         if D_allz_list is None:
             D_allz_list = []
             for i in range(len(D_rest_list)):
                 D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv))
 
-    elif dictionary is not None:
+    use_D_sys_list = False
+    if (D_sys_list is not None) and D_sys_list_tab is not None:
+        use_D_sys_list = True
+        D_sys = None
+        D_sys_alphas = None
+        D_sys_alphas_ndict = None
+
+    if dictionary is not None:
         lamb_rest = dictionary.lamb_rest
-        D_rest = dictionary.D_rest
-        D_rest_alphas = dictionary.D_rest_alphas
-        D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
-        D_sys = dictionary.D_sys
-        D_sys_alphas = dictionary.D_sys_alphas
-        D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
-        D_allz = dictionary.D_allz
+        if not use_D_allz_list:
+            D_rest = dictionary.D_rest
+            D_rest_alphas = dictionary.D_rest_alphas
+            D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
+            D_allz = dictionary.D_allz
+        if not use_D_sys_list:
+            D_sys = dictionary.D_sys
+            D_sys_alphas = dictionary.D_sys_alphas
+            D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         if (D_allz is None) or (conv != dictionary._D_allz_filtered):
             # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
             if (conv != dictionary._D_allz_filtered):
@@ -1714,7 +1789,10 @@ def fit_zgrid_multiprocessing(child,
         Ndict = D_rest.shape[0]
     else:
         Ndict = D_allz_list[-1].shape[1]
-    if D_sys is not None:
+
+    if use_D_sys_list:
+        Ndict_sys = D_sys_list[-1].shape[0]
+    elif D_sys is not None:
         Ndict_sys = D_sys.shape[0]
     else:
         Ndict_sys = 0
@@ -1763,6 +1841,8 @@ def fit_zgrid_multiprocessing(child,
                 D_rest_list=D_rest_list,
                 D_allz_list=D_allz_list,
                 D_rest_list_tab=D_rest_list_tab,
+                D_sys_list=D_sys_list,
+                D_sys_list_tab=D_sys_list_tab,
                 zinput=ztrue[i], 
                 zgrid=zgrid, 
                 filters=filters, 
@@ -1788,6 +1868,8 @@ def fit_zgrid_multiprocessing(child,
                 D_rest_list=D_rest_list,
                 D_allz_list=D_allz_list,
                 D_rest_list_tab=D_rest_list_tab,
+                D_sys_list=D_sys_list,
+                D_sys_list_tab=D_sys_list_tab,
                 zinput=ztrue[i], 
                 zgrid=zgrid, 
                 filters=filters, 
@@ -1847,6 +1929,8 @@ def fit_cat_mp(cat,
                D_rest_list=None,
                D_allz_list=None,
                D_rest_list_tab=None,
+               D_sys_list=None,
+               D_sys_list_tab=None,
                fit_zgrid_validation_kws=None, 
                marginalize_zgrid_validation_kws=None, 
                filters=None, 
@@ -1893,28 +1977,38 @@ def fit_cat_mp(cat,
         D_rest = None
         D_rest_alphas = None
         D_rest_alphas_ndict = None
-        D_sys = None
-        D_sys_alphas = None
-        D_sys_alphas_ndict = None
+        # D_sys = None
+        # D_sys_alphas = None
+        # D_sys_alphas_ndict = None
         if D_allz_list is None:
             D_allz_list = []
             for i in range(len(D_rest_list)):
                 D_allz_list.append(apply_redshift_all(D_rest_list[i], zgrid, lamb_rest, lamb_obs, filters=filters, conv=conv))
 
-    elif dictionary is not None:
+    use_D_sys_list = False
+    if (D_sys_list is not None) and D_sys_list_tab is not None:
+        use_D_sys_list = True
+        D_sys = None
+        D_sys_alphas = None
+        D_sys_alphas_ndict = None
+
+    if dictionary is not None:
         lamb_rest = dictionary.lamb_rest
-        D_rest = dictionary.D_rest
-        D_rest_alphas = dictionary.D_rest_alphas
-        D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
-        D_sys = dictionary.D_sys
-        D_sys_alphas = dictionary.D_sys_alphas
-        D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
-        D_allz = dictionary.D_allz
+        if not use_D_allz_list:
+            D_rest = dictionary.D_rest
+            D_rest_alphas = dictionary.D_rest_alphas
+            D_rest_alphas_ndict = dictionary.D_rest_alphas_ndict
+            D_allz = dictionary.D_allz
+        if not use_D_sys_list:    
+            D_sys = dictionary.D_sys
+            D_sys_alphas = dictionary.D_sys_alphas
+            D_sys_alphas_ndict = dictionary.D_sys_alphas_ndict
         if (D_allz is None) or (conv != dictionary._D_allz_filtered):
             # if conv and dictionary._D_allz_filtered do not match, rebuild D_allz
             if (conv != dictionary._D_allz_filtered):
                 print(f'libs.fit_cat_mp: conv={conv}, dictionary._D_allz_filtered={dictionary._D_allz_filtered}, rebuild D_allz')
             D_allz = dictionary.make_D_allz(lamb_obs, zgrid=zgrid, filters=filters, conv=conv)
+
     Ndict_total = 0
     if D_rest is not None:
         Ndict_total = Ndict_total + D_rest.shape[0]
@@ -1922,6 +2016,8 @@ def fit_cat_mp(cat,
         Ndict_total = Ndict_total + D_sys.shape[0]
     if use_D_allz_list:
         Ndict_total = Ndict_total + D_allz_list[-1].shape[1]
+    if use_D_sys_list:
+        Ndict_total = Ndict_total + D_sys_list[-1].shape[0]
 
     # in case dictionary and D_allz are not provided, build it here
     if D_allz is None and not use_D_allz_list:
@@ -1964,6 +2060,8 @@ def fit_cat_mp(cat,
                                   'D_rest_list': D_rest_list,
                                   'D_allz_list': D_allz_list,
                                   'D_rest_list_tab': D_rest_list_tab,
+                                  'D_sys_list': D_sys_list,
+                                  'D_sys_list_tab': D_sys_list_tab,
                                   'fit_zgrid_validation_kws': fit_zgrid_validation_kws,
                                   'marginalize_zgrid_validation_kws': marginalize_zgrid_validation_kws,
                                   'zgrid': zgrid,
@@ -2029,7 +2127,7 @@ def fit_cat_mp(cat,
                     }
     return outputs_dict
 
-
+# TODO D_rest_list and D_sys_list
 # function similar to fit_zgrid but only output specified redshift model and coef
 def fit_z_model(z, lamb_obs, spec_obs, err_obs,
                 dictionary=None, lamb_rest=None, D_rest=None, D_sys=None,
