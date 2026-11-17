@@ -56,6 +56,14 @@ def parse_args():
         help='Training catalog',
     )
     parser.add_argument(
+        '-e',
+        '--epochs',
+        type=int,
+        default=None,
+        metavar='<int>',
+        help='Number of epoch for training',
+    )
+    parser.add_argument(
         '-at',
         '--alpha_train',
         type=float,
@@ -86,6 +94,14 @@ def parse_args():
         default=None,
         metavar='<int>',
         help='Number of dictionaries to be fixed (from the start of list)',
+    )
+    parser.add_argument(
+        '-nds',
+        '--ndicts_sys',
+        type=int,
+        default=None,
+        metavar='<int>',
+        help='Number of sys dictionaries',
     )
     parser.add_argument(
         '-myt',
@@ -261,8 +277,13 @@ def main():
         larslasso_alpha_sigma_train = args.alpha_sig_train
         fit_zgrid_training_kws['alpha_sig'] = larslasso_alpha_sigma_train
 
+    if args.epoch is not None:
+        Nepoch = args.epoch
+
     if args.ndicts is not None:
         Ndict = args.ndicts
+    if args.ndicts_sys is not None:
+        Ndict_sys = args.ndicts_sys
     if args.dictionary is not None:
         dict_read_from_file = args.dictionary
         if args.dictionary == 'None' or args.dictionary == 'none':
@@ -378,10 +399,10 @@ def main():
     D_rest_initial = dicts.D_rest_initial
     D_sys = dicts.D_sys
     D_sys_initial = dicts.D_sys_initial
-    D_rest_alphas = dicts.D_rest_alphas
-    D_rest_alphas_ndict = dicts.D_rest_alphas_ndict
-    D_sys_alphas = dicts.D_sys_alphas
-    D_sys_alphas_ndict = dicts.D_sys_alphas_ndict
+    # D_rest_alphas = dicts.D_rest_alphas
+    # D_rest_alphas_ndict = dicts.D_rest_alphas_ndict
+    # D_sys_alphas = dicts.D_sys_alphas
+    # D_sys_alphas_ndict = dicts.D_sys_alphas_ndict
     # print('tttttt', Ndict_sys, dicts.D_rest_alphas_ndict, dicts.D_sys_alphas_ndict)
     # # lamb_rest_idx = np.arange(len(lamb_rest))
     # # Read EAZY templates for dictionary initialization and also evaluation test if they are given
@@ -1208,10 +1229,10 @@ def main():
                         D_rest=D_rest_initial, 
                         D_sys=D_sys_initial, 
                         D_allz=D_allz_initial, 
-                        D_rest_alphas=D_rest_alphas, 
-                        D_rest_alphas_ndict=D_rest_alphas_ndict,
-                        D_sys_alphas=D_sys_alphas,
-                        D_sys_alphas_ndict=D_sys_alphas_ndict,
+                        # D_rest_alphas=D_rest_alphas, 
+                        # D_rest_alphas_ndict=D_rest_alphas_ndict,
+                        # D_sys_alphas=D_sys_alphas,
+                        # D_sys_alphas_ndict=D_sys_alphas_ndict,
                         zinput=zinput, 
                         zgrid=zgrid, 
                         filters=filters, 
@@ -1227,10 +1248,10 @@ def main():
                         D_rest=D_rest_initial, 
                         D_sys=D_sys_initial, 
                         D_allz=D_allz_initial, 
-                        D_rest_alphas=D_rest_alphas, 
-                        D_rest_alphas_ndict=D_rest_alphas_ndict,
-                        D_sys_alphas=D_sys_alphas,
-                        D_sys_alphas_ndict=D_sys_alphas_ndict,
+                        # D_rest_alphas=D_rest_alphas, 
+                        # D_rest_alphas_ndict=D_rest_alphas_ndict,
+                        # D_sys_alphas=D_sys_alphas,
+                        # D_sys_alphas_ndict=D_sys_alphas_ndict,
                         zinput=zinput, 
                         zgrid=zgrid, 
                         filters=filters, 
@@ -1558,10 +1579,10 @@ def main():
                     D_rest=D_rest_initial,
                     D_sys=D_sys_initial,
                     D_allz=D_allz_initial,
-                    D_rest_alphas=D_rest_alphas,
-                    D_rest_alphas_ndict=D_rest_alphas_ndict,
-                    D_sys_alphas=D_sys_alphas,
-                    D_sys_alphas_ndict=D_sys_alphas_ndict,
+                    # D_rest_alphas=D_rest_alphas,
+                    # D_rest_alphas_ndict=D_rest_alphas_ndict,
+                    # D_sys_alphas=D_sys_alphas,
+                    # D_sys_alphas_ndict=D_sys_alphas_ndict,
                     nthread=mp_threads,
                     fit_zgrid_validation_kws=fit_zgrid_validation_kws,
                     marginalize_zgrid_validation_kws=marginalize_zgrid_validation_kws,
@@ -1747,8 +1768,8 @@ def main():
                             cat=cat, 
                             lamb_rest=lamb_rest, 
                             D_rest=D_rest, 
-                            D_rest_alphas=D_rest_alphas,
-                            D_rest_alphas_ndict=D_rest_alphas_ndict, 
+                            # D_rest_alphas=D_rest_alphas,
+                            # D_rest_alphas_ndict=D_rest_alphas_ndict, 
                             D_rest_initial=D_rest_initial, 
                             D_sys=D_sys, 
                             D_sys_initial=D_sys_initial,
