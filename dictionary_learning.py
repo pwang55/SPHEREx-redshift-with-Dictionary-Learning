@@ -120,6 +120,14 @@ def parse_args():
         help='use median filter to calculate corrected ynorm (for training)',
     )
     parser.add_argument(
+        '-od',
+        '--output_dir',
+        type=str,
+        default=None,
+        metavar='<str>',
+        help='output files directory',
+    )
+    parser.add_argument(
         '-do',
         '--dicts_out',
         type=str,
@@ -134,14 +142,6 @@ def parse_args():
         default=None,
         metavar='<str>',
         help='obs-frame dictionaries output filename',
-    )
-    parser.add_argument(
-        '-od',
-        '--output_dir',
-        type=str,
-        default=None,
-        metavar='<str>',
-        help='output files directory',
     )
 
     return parser.parse_args()
@@ -277,8 +277,8 @@ def main():
         larslasso_alpha_sigma_train = args.alpha_sig_train
         fit_zgrid_training_kws['alpha_sig'] = larslasso_alpha_sigma_train
 
-    if args.epoch is not None:
-        Nepoch = args.epoch
+    if args.epochs is not None:
+        Nepoch = args.epochs
 
     if args.ndicts is not None:
         Ndict = args.ndicts

@@ -227,11 +227,11 @@ class Catalog:
 
             # lamb_obs
             try:    # TEMP
+                spec_obs = np.stack(data['flux_dered_fiducial'])
+                err_obs = np.stack(data['flux_err_dered_fiducial'])    
+            except:
                 spec_obs = np.stack(data['fiducial_flux'])
                 err_obs = np.stack(data['fiducial_flux_err'])
-            except:
-                spec_obs = np.stack(data['flux_dered_fiducial'])
-                err_obs = np.stack(data['flux_err_dered_fiducial'])                
             spherex_id = np.array(data['SPHERExRefID'])
             try:
                 lamb_data = np.load(lambdafile)
@@ -382,6 +382,13 @@ class Dictionary:
                 self.lamb_rest = dicts['lamb_rest']
             else:
                 self.lamb_rest = np.arange(self.lamb_rest_start, self.lamb_rest_end, self.lamb_rest_step)
+
+            # TEMP  assume npz file won't ever have D_rest_list
+            self.D_rest_list_tab = None
+            self.D_rest_list = None
+            self.D_sys_list_tab = None
+            self.D_sys_list = None
+            self.nbanks = None
 
             # determine if D_rest, Ndict exist in file
             if 'D_rest' in keys and dicts['D_rest'] is not None:
